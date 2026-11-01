@@ -204,7 +204,7 @@ export class EngineHost {
       case 'signField':
         return this.#engine.signField(command.fieldId, command.certificate, command.password, command.reason, command.location, command.date)
       case 'signatures':
-        return this.#engine.signatures()
+        return this.#engine.signatures(command.now)
       case 'undo':
         return this.#engine.undo()
       case 'redo':

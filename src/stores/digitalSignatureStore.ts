@@ -29,7 +29,7 @@ export const useDigitalSignatureStore = create<DigitalSignatureStore>()((set, ge
 
   async reload() {
     try {
-      set({ reports: await engine.request({ kind: 'signatures' }, { group: 'signatures' }) })
+      set({ reports: await engine.request({ kind: 'signatures', now: Date.now() }, { group: 'signatures' }) })
     } catch (error) {
       if (!(error instanceof CancelledError)) set({ notice: (error as Error).message })
     }

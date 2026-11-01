@@ -13,8 +13,10 @@ const report: SignatureInfo = {
   signer: 'Ada Lovelace',
   signedAt: 'D:20261018120000Z',
   reason: 'Approved',
-  status: 'valid',
+  status: 'intact',
   problem: null,
+  identity: 'expired',
+  identityProblem: 'the certificate was valid until 2020-01-01',
   changedAfter: false,
 }
 
@@ -61,6 +63,7 @@ describe('digitalSignatureStore', () => {
     expect(await signing).toBeNull()
     expect(useDigitalSignatureStore.getState()).toMatchObject({ dialogOpen: true, notice: 'the password does not open the certificate file' })
     const loading = store.reload()
+    expect(port.requests.at(-1)).toMatchObject({ kind: 'signatures', now: Date.UTC(2026, 9, 18, 12, 0, 0) })
     await port.answerNext([report])
     await loading
     expect(useDigitalSignatureStore.getState().reports).toEqual([report])

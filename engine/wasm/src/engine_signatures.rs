@@ -1,6 +1,8 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use serde::{Deserialize, Serialize};
 use tintenfisch::image::DecodedImage;
-use tintenfisch::signing::{SignatureMark, SignatureStatus, SigningDetails, SigningIdentity};
+use tintenfisch::signing::{IdentityStatus, SignatureMark, SignatureStatus, SigningDetails, SigningIdentity};
 use wasm_bindgen::prelude::*;
 
 use crate::engine::{Engine, page_id};
@@ -26,6 +28,8 @@ struct SignatureReply {
     reason: String,
     status: &'static str,
     problem: Option<String>,
+    identity: Option<&'static str>,
+    identity_problem: Option<String>,
     changed_after: bool,
 }
 
@@ -49,15 +53,21 @@ impl Engine {
         self.document_mut()?.sign_field(field, &identity, &details).map_err(fail)
     }
 
-    pub fn signatures(&self) -> Result<JsValue, JsError> {
-        let reports = self.document()?.signatures().map_err(fail)?;
+    pub fn signatures(&self, now: f64) -> Result<JsValue, JsError> {
+        let reports = self.document()?.signatures(moment(now)).map_err(fail)?;
         let replies: Vec<SignatureReply> = reports
             .into_iter()
             .map(|report| {
                 let (status, problem) = match report.status {
-                    SignatureStatus::Valid => ("valid", None),
+                    SignatureStatus::Intact => ("intact", None),
                     SignatureStatus::Broken(problem) => ("broken", Some(problem)),
                     SignatureStatus::Unsupported(problem) => ("unsupported", Some(problem)),
+                };
+                let (identity, identity_problem) = match report.identity {
+                    Some(IdentityStatus::Expired(problem)) => (Some("expired"), Some(problem)),
+                    Some(IdentityStatus::NotYetValid(problem)) => (Some("notYetValid"), Some(problem)),
+                    Some(IdentityStatus::Unverified(problem)) => (Some("unverified"), Some(problem)),
+                    None => (None, None),
                 };
                 SignatureReply {
                     field_id: object_text(report.field),
@@ -67,6 +77,8 @@ impl Engine {
                     reason: report.reason,
                     status,
                     problem,
+                    identity,
+                    identity_problem,
                     changed_after: report.changed_after,
                 }
             })
@@ -113,4 +125,8 @@ impl Engine {
         let id = self.document_mut()?.add_signature(page_id(page)?, rect.rect(), name, mark).map_err(fail)?;
         reply(&AddedFieldReply { field_id: object_text(id), dirty_pages: vec![page.to_string()] })
     }
+}
+
+fn moment(milliseconds: f64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_millis(milliseconds.max(0.0) as u64)
 }

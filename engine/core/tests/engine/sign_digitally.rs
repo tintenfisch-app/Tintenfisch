@@ -1,3 +1,5 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use crate::support;
 
 use support::fixtures;
@@ -10,10 +12,15 @@ use tintenfisch::forms::NewField;
 use tintenfisch::forms::NewFieldKind;
 use tintenfisch::geometry::Rect;
 use tintenfisch::pages::PageId;
-use tintenfisch::signing::{SignatureMark, SignatureReport, SignatureStatus, SigningDetails, SigningIdentity};
+use tintenfisch::signing::{
+    IdentityStatus, SignatureMark, SignatureReport, SignatureStatus, SigningDetails, SigningIdentity,
+};
 use tintenfisch::syntax::{ObjId, Object};
 
 const PASSWORD: &str = "tintenfisch-test";
+const NOVEMBER_2026: u64 = 1_793_491_200;
+const JANUARY_2026: u64 = 1_767_225_600;
+const JUNE_2019: u64 = 1_559_347_200;
 
 struct Office {
     document: Document,
@@ -48,7 +55,11 @@ impl Office {
     }
 
     fn only_report(&self) -> SignatureReport {
-        let reports = self.document.signatures().unwrap();
+        self.report_at(NOVEMBER_2026)
+    }
+
+    fn report_at(&self, seconds: u64) -> SignatureReport {
+        let reports = self.document.signatures(at(seconds)).unwrap();
         assert_eq!(reports.len(), 1, "{reports:?}");
         reports.into_iter().next().unwrap()
     }
@@ -57,6 +68,10 @@ impl Office {
 fn identity(certificate: &str) -> SigningIdentity {
     let bytes = std::fs::read(format!("tests/certificates/{certificate}")).unwrap();
     SigningIdentity::from_pkcs12(&bytes, PASSWORD).unwrap()
+}
+
+fn at(seconds: u64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(seconds)
 }
 
 fn details() -> SigningDetails {
@@ -68,13 +83,13 @@ fn details() -> SigningDetails {
 }
 
 #[test]
-fn a_signed_field_checks_valid_and_the_signature_follows_the_pending_changes() {
+fn a_signed_field_checks_intact_and_the_signature_follows_the_pending_changes() {
     let (mut office, field) = Office::with_signature_field();
     let unsigned = office.document.save(false).unwrap();
     let signed = office.sign(field, "test-signer.p12");
     assert!(signed.starts_with(&unsigned), "the signature is appended to the saved changes");
     let report = office.only_report();
-    assert_eq!(report.status, SignatureStatus::Valid);
+    assert_eq!(report.status, SignatureStatus::Intact);
     assert_eq!(report.signer.as_deref(), Some("Tintenfisch Test Signer"));
     assert_eq!(
         (report.field_name.as_str(), report.reason.as_str(), report.signed_at.as_str()),
@@ -83,7 +98,7 @@ fn a_signed_field_checks_valid_and_the_signature_follows_the_pending_changes() {
     assert!(!report.changed_after);
     assert!(office.document.undo().is_none(), "the signed file is the new base");
     let reopened = Office::open(signed);
-    assert_eq!(reopened.only_report().status, SignatureStatus::Valid);
+    assert_eq!(reopened.only_report().status, SignatureStatus::Intact);
     let catalog = reopened.document.store().trailer().get("Root").and_then(Object::as_reference).unwrap();
     let form = reopened.document.store().object(catalog).unwrap().as_dict().unwrap().get("AcroForm").cloned().unwrap();
     let form = reopened.document.store().resolve(&form).unwrap();
@@ -91,14 +106,51 @@ fn a_signed_field_checks_valid_and_the_signature_follows_the_pending_changes() {
 }
 
 #[test]
-fn a_certificate_file_in_the_legacy_format_signs_too() {
+fn an_intact_signature_reports_the_signer_identity_separately() {
     let (mut office, field) = Office::with_signature_field();
-    office.sign(field, "test-signer-legacy.p12");
-    assert_eq!(office.only_report().status, SignatureStatus::Valid);
+    office.sign(field, "test-signer.p12");
+    let report = office.only_report();
+    assert_eq!(report.status, SignatureStatus::Intact);
+    assert_eq!(
+        report.identity,
+        Some(IdentityStatus::Unverified(
+            "the issuer Tintenfisch Test CA is not checked against a list of trusted authorities".to_string()
+        ))
+    );
+    assert_eq!(
+        office.report_at(JANUARY_2026).identity,
+        Some(IdentityStatus::NotYetValid("the certificate is valid from 2026-10-18 only".to_string()))
+    );
 }
 
 #[test]
-fn an_incremental_change_after_signing_keeps_the_signature_valid() {
+fn an_expired_self_signed_certificate_is_not_reported_as_valid() {
+    let (mut office, field) = Office::with_signature_field();
+    office.sign(field, "test-signer-expired.p12");
+    let report = office.only_report();
+    assert_eq!(report.status, SignatureStatus::Intact);
+    assert_eq!(report.signer.as_deref(), Some("Tintenfisch Expired Signer"));
+    assert_eq!(
+        report.identity,
+        Some(IdentityStatus::Expired("the certificate was valid until 2020-01-01".to_string()))
+    );
+    assert_eq!(
+        office.report_at(JUNE_2019).identity,
+        Some(IdentityStatus::Unverified(
+            "the certificate is self-signed, so nobody vouches for the signer's name".to_string()
+        ))
+    );
+}
+
+#[test]
+fn a_certificate_file_in_the_legacy_format_signs_too() {
+    let (mut office, field) = Office::with_signature_field();
+    office.sign(field, "test-signer-legacy.p12");
+    assert_eq!(office.only_report().status, SignatureStatus::Intact);
+}
+
+#[test]
+fn an_incremental_change_after_signing_keeps_the_signature_intact() {
     let (mut office, field) = Office::with_signature_field();
     office.sign(field, "test-signer.p12");
     let note = Markup::Note { at: (40.0, 40.0), text: "Checked after signing".to_string() };
@@ -106,7 +158,7 @@ fn an_incremental_change_after_signing_keeps_the_signature_valid() {
     office.document.add_markup(office.page, &note, &style, &office.library).unwrap();
     let edited = Office::open(office.document.save(false).unwrap());
     let report = edited.only_report();
-    assert_eq!(report.status, SignatureStatus::Valid);
+    assert_eq!(report.status, SignatureStatus::Intact);
     assert!(report.changed_after, "the change after signing is noticed");
 }
 
@@ -118,6 +170,7 @@ fn a_changed_byte_breaks_the_signature() {
     signed[at] = b'Q';
     let report = Office::open(signed).only_report();
     assert_eq!(report.status, SignatureStatus::Broken("the signed bytes have changed".to_string()));
+    assert_eq!(report.identity, None);
 }
 
 #[test]
@@ -138,7 +191,7 @@ fn wrong_passwords_other_keys_and_fields_are_refused() {
     assert_eq!(office.document.sign_field(text, &identity, &details()).unwrap_err().kind, ErrorKind::Unsupported);
     office.document.sign_field(field, &identity, &details()).unwrap();
     assert_eq!(office.document.sign_field(field, &identity, &details()).unwrap_err().kind, ErrorKind::Unsupported);
-    assert!(Office::open(fixtures::editing_features()).document.signatures().unwrap().is_empty());
+    assert!(Office::open(fixtures::editing_features()).document.signatures(at(NOVEMBER_2026)).unwrap().is_empty());
 }
 
 #[test]

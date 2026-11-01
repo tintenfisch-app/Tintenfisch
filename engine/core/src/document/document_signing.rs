@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use crate::document::Document;
 use crate::document::document_form_design::ensure_form;
 use crate::error::{Error, Result};
@@ -80,7 +82,7 @@ impl Document {
         Ok(bytes)
     }
 
-    pub fn signatures(&self) -> Result<Vec<SignatureReport>> {
+    pub fn signatures(&self, now: SystemTime) -> Result<Vec<SignatureReport>> {
         let bytes = self.store.source().bytes();
         let mut reports = Vec::new();
         for field in self.fields()?.into_iter().filter(|field| field.kind == FieldKind::Signature) {
@@ -100,7 +102,7 @@ impl Document {
                 .name("SubFilter")
                 .map(|name| String::from_utf8_lossy(name.as_bytes()).into_owned())
                 .unwrap_or_default();
-            let (status, signer, end) = match range[..] {
+            let (status, identity, signer, end) = match range[..] {
                 [0, before, after, length]
                     if before < after
                         && after.checked_add(length).is_some_and(|end| end <= bytes.len())
@@ -108,17 +110,20 @@ impl Document {
                         && bytes[after - 1] == b'>' =>
                 {
                     if DETACHED.contains(&sub_filter.as_str()) {
-                        let check = CmsCheck::run(contents, &[&bytes[..before], &bytes[after..after + length]]);
-                        (check.status, check.signer, after + length)
+                        let check = CmsCheck::run(contents, &[&bytes[..before], &bytes[after..after + length]], now);
+                        (check.status, check.identity, check.signer, after + length)
                     } else {
                         (
                             SignatureStatus::Unsupported(format!("{sub_filter} signatures cannot be checked yet")),
+                            None,
                             None,
                             after + length,
                         )
                     }
                 }
-                _ => (SignatureStatus::Broken("the signed byte range is not valid".to_string()), None, bytes.len()),
+                _ => {
+                    (SignatureStatus::Broken("the signed byte range is not valid".to_string()), None, None, bytes.len())
+                }
             };
             reports.push(SignatureReport {
                 field: field.id,
@@ -127,6 +132,7 @@ impl Document {
                 signed_at: text("M"),
                 reason: text("Reason"),
                 status,
+                identity,
                 changed_after: bytes[end..].iter().any(|byte| !byte.is_ascii_whitespace()),
             });
         }

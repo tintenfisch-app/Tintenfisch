@@ -199,10 +199,15 @@ export interface SignatureInfo {
   signer: string | null
   signedAt: string
   reason: string
-  status: 'valid' | 'broken' | 'unsupported'
+  status: 'intact' | 'broken' | 'unsupported'
   problem: string | null
+  identity: SignerIdentity | null
+  identityProblem: string | null
   changedAfter: boolean
 }
+
+export type SignerIdentity = 'expired' | 'notYetValid' | 'unverified'
+
 
 export interface SigningRequest {
   fieldId: string
@@ -371,7 +376,7 @@ export type Command =
   | { kind: 'deleteField'; fieldId: string }
   | { kind: 'addSignature'; pageId: string; rect: Box; name: string; mark: SignatureMarkRequest }
   | ({ kind: 'signField'; date: string } & SigningRequest)
-  | { kind: 'signatures' }
+  | { kind: 'signatures'; now: number }
   | { kind: 'undo' }
   | { kind: 'redo' }
 

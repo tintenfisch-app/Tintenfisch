@@ -1,6 +1,6 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SignatureStatus {
-    Valid,
+    Intact,
     Broken(String),
     Unsupported(String),
 }
