@@ -13,14 +13,22 @@ interface LibraryStore {
   refresh(): Promise<void>
   openNew(name: string, bytes: Uint8Array): Promise<string | null>
   show(id: string): Promise<boolean>
+  reloadLatest(): Promise<void>
+  saveCopy(): Promise<string | null>
   goHome(): Promise<void>
   askToDelete(file: StoredFile | null): void
   confirmDelete(): Promise<void>
 }
 
+const copyName = (name: string) => `${name.replace(/\.pdf$/i, '')} (copy).pdf`
+
 const report = (error: unknown) => useToastStore.getState().show('library', (error as Error).message)
 
 export const useLibraryStore = create<LibraryStore>()((set, get) => {
+  let loadedVersion = 0
+
+  onDocumentReplaced((ready) => useAutoSaveStore.getState().track(ready ? get().current : null, loadedVersion))
+
   const leave = async () => {
     const autoSave = useAutoSaveStore.getState()
     await autoSave.flush()
@@ -58,9 +66,10 @@ export const useLibraryStore = create<LibraryStore>()((set, get) => {
         }
         const file = await documentLibrary.add(name, bytes)
         void globalThis.navigator?.storage?.persist?.()
+        loadedVersion = file.modified
         set({ current: file.id, missing: false })
         useToastStore.getState().clear('library')
-        if (opened.phase === 'ready') useAutoSaveStore.getState().track(file.id)
+        if (opened.phase === 'ready') useAutoSaveStore.getState().track(file.id, file.modified)
         return file.id
       } catch (error) {
         report(error)
@@ -78,12 +87,35 @@ export const useLibraryStore = create<LibraryStore>()((set, get) => {
           set({ missing: true })
           return false
         }
+        loadedVersion = stored.file.modified
         set({ current: id, missing: false })
         await useDocumentStore.getState().open(stored.file.name, stored.bytes)
       } catch (error) {
         report(error)
       }
       return true
+    },
+
+    async reloadLatest() {
+      const id = get().current
+      if (!id) return
+      set({ current: null })
+      await get().show(id)
+    },
+
+    async saveCopy() {
+      const documents = useDocumentStore.getState()
+      if (documents.document.phase !== 'ready') return null
+      try {
+        const file = await documentLibrary.add(copyName(documents.document.name), await documents.save())
+        loadedVersion = file.modified
+        set({ current: file.id })
+        useAutoSaveStore.getState().track(file.id, file.modified)
+        return file.id
+      } catch (error) {
+        report(error)
+        return null
+      }
     },
 
     async goHome() {
@@ -113,5 +145,3 @@ export const useLibraryStore = create<LibraryStore>()((set, get) => {
     },
   }
 })
-
-onDocumentReplaced((ready) => useAutoSaveStore.getState().track(ready ? useLibraryStore.getState().current : null))

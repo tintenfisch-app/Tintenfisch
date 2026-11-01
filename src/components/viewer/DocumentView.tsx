@@ -1,3 +1,4 @@
+import { NewerVersionDialog } from '@/components/document/NewerVersionDialog.tsx'
 import { PasswordPrompt } from '@/components/document/PasswordPrompt.tsx'
 import { Hint } from '@/components/ui/Text.tsx'
 import { HomeScreen } from '@/components/home/HomeScreen.tsx'
@@ -8,8 +9,9 @@ export function DocumentView() {
   const state = useDocumentStore((store) => store.document)
   if (state.phase === 'ready') {
     return (
-      <section className="flex min-h-0 min-w-0 flex-1">
+      <section className="relative flex min-h-0 min-w-0 flex-1">
         <DocumentScroller key={state.session} document={state} />
+        <NewerVersionDialog />
       </section>
     )
   }

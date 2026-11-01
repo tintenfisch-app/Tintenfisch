@@ -4,7 +4,7 @@ import { useAutoSaveStore } from '@/stores/autoSaveStore.ts'
 export function SaveStatus() {
   const { status, error } = useAutoSaveStore()
   if (status === 'idle') return null
-  if (status === 'failed') {
+  if (status === 'failed' || status === 'conflict') {
     return (
       <span className="flex flex-none items-center gap-1 text-xs text-negative" role="alert" title={error ?? undefined}>
         <Icon name="alert-triangle" className="size-4" />

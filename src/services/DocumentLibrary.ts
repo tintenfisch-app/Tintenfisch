@@ -6,6 +6,12 @@ export interface StoredFile {
   modified: number
 }
 
+interface Stores {
+  transaction: IDBTransaction
+  files: IDBObjectStore
+  contents: IDBObjectStore
+}
+
 const DATABASE = 'tintenfisch-files'
 const FILES = 'files'
 const CONTENTS = 'contents'
@@ -64,13 +70,16 @@ export class DocumentLibrary {
     return { file: opened, bytes }
   }
 
-  async replace(id: string, bytes: Uint8Array): Promise<void> {
-    const file = await this.#read((stores) => settled(stores.files.get(id) as IDBRequest<StoredFile | undefined>))
-    if (!file) throw new Error('the document is no longer stored')
-    await this.#write((stores) => {
-      stores.files.put({ ...file, size: bytes.byteLength, modified: this.#now() })
-      stores.contents.put(bytes, id)
-    })
+  async replace(id: string, bytes: Uint8Array, basedOn: number): Promise<StoredFile | null> {
+    const { transaction, files, contents } = await this.#stores('readwrite')
+    const stored = await settled(files.get(id) as IDBRequest<StoredFile | undefined>)
+    if (!stored) throw new Error('the document is no longer stored')
+    if (stored.modified !== basedOn) return null
+    const file = { ...stored, size: bytes.byteLength, modified: Math.max(this.#now(), stored.modified + 1) }
+    files.put(file)
+    contents.put(bytes, id)
+    await finished(transaction)
+    return file
   }
 
   async remove(id: string): Promise<void> {
@@ -80,15 +89,19 @@ export class DocumentLibrary {
     })
   }
 
-  async #read<T>(work: (stores: { files: IDBObjectStore; contents: IDBObjectStore }) => Promise<T>): Promise<T> {
-    const transaction = (await this.#database).transaction([FILES, CONTENTS], 'readonly')
-    return work({ files: transaction.objectStore(FILES), contents: transaction.objectStore(CONTENTS) })
+  async #read<T>(work: (stores: Stores) => Promise<T>): Promise<T> {
+    return work(await this.#stores('readonly'))
   }
 
-  async #write(work: (stores: { files: IDBObjectStore; contents: IDBObjectStore }) => void): Promise<void> {
-    const transaction = (await this.#database).transaction([FILES, CONTENTS], 'readwrite')
-    work({ files: transaction.objectStore(FILES), contents: transaction.objectStore(CONTENTS) })
-    await finished(transaction)
+  async #write(work: (stores: Stores) => void): Promise<void> {
+    const stores = await this.#stores('readwrite')
+    work(stores)
+    await finished(stores.transaction)
+  }
+
+  async #stores(mode: IDBTransactionMode): Promise<Stores> {
+    const transaction = (await this.#database).transaction([FILES, CONTENTS], mode)
+    return { transaction, files: transaction.objectStore(FILES), contents: transaction.objectStore(CONTENTS) }
   }
 }
 
