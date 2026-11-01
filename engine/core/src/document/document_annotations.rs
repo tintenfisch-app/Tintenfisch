@@ -11,6 +11,7 @@ use crate::forms::DefaultAppearance;
 use crate::geometry::{Matrix, Rect};
 use crate::pages::{Page, PageId, PageTree};
 use crate::render::DisplaySpace;
+use crate::store::Transaction;
 use crate::syntax::{Dict, Name, ObjId, Object, Stream, encode_text};
 
 const PRINT: i64 = 4;
@@ -122,21 +123,18 @@ impl Document {
 
     pub fn delete_annotation(&mut self, page: PageId, annotation: ObjId) -> Result<()> {
         self.store.transact("Delete comment", "", |transaction| {
-            let popup = transaction
-                .object(annotation)?
-                .as_dict()
-                .and_then(|dict| dict.get("Popup"))
-                .and_then(Object::as_reference);
             let annotations = annotation_list(transaction, page.0)?;
-            let kept: Vec<Object> = annotations
-                .iter()
-                .filter(|entry| entry.as_reference().is_none_or(|id| id != annotation && Some(id) != popup))
-                .cloned()
-                .collect();
-            if kept.len() == annotations.len() {
+            let listed: Vec<ObjId> = annotations.iter().filter_map(Object::as_reference).collect();
+            if !listed.contains(&annotation) {
                 return Err(Error::new("the comment is not on this page"));
             }
-            write_annotation_list(transaction, page.0, kept)
+            let removed = thread_of(transaction, annotation, &listed)?;
+            let kept: Vec<Object> = annotations
+                .into_iter()
+                .filter(|entry| entry.as_reference().is_none_or(|id| !removed.contains(&id)))
+                .collect();
+            write_annotation_list(transaction, page.0, kept)?;
+            discard(transaction, &removed)
         })
     }
 
@@ -214,6 +212,72 @@ impl Document {
             .find(|candidate| candidate.id == page)
             .ok_or_else(|| Error::new(format!("no page {page}")))
     }
+}
+
+fn thread_of(transaction: &Transaction, annotation: ObjId, listed: &[ObjId]) -> Result<Vec<ObjId>> {
+    let mut removed = vec![annotation];
+    let mut index = 0;
+    while let Some(&current) = removed.get(index) {
+        let popup =
+            transaction.object(current)?.as_dict().and_then(|dict| dict.get("Popup")).and_then(Object::as_reference);
+        if let Some(popup) = popup.filter(|popup| !removed.contains(popup)) {
+            removed.push(popup);
+        }
+        for candidate in listed {
+            if removed.contains(candidate) {
+                continue;
+            }
+            let object = transaction.object(*candidate)?;
+            let answers = object.as_dict().is_some_and(|dict| {
+                ["IRT", "Parent"].iter().any(|key| dict.get(key).and_then(Object::as_reference) == Some(current))
+            });
+            if answers {
+                removed.push(*candidate);
+            }
+        }
+        index += 1;
+    }
+    Ok(removed)
+}
+
+fn discard(transaction: &mut Transaction, removed: &[ObjId]) -> Result<()> {
+    for id in removed {
+        if !transaction.store().is_live(*id) {
+            continue;
+        }
+        if transaction.store().is_in_source(*id) && carries_text(&*transaction.store().source().object(*id)?) {
+            transaction.force_rewrite();
+        }
+        let appearances = appearance_streams(transaction, *id)?;
+        for stream in appearances {
+            if transaction.store().is_live(stream) && !transaction.store().is_in_source(stream) {
+                transaction.free(stream)?;
+            }
+        }
+        transaction.free(*id)?;
+    }
+    Ok(())
+}
+
+fn carries_text(annotation: &Object) -> bool {
+    annotation.as_dict().is_some_and(|dict| dict.contains("Contents") || dict.contains("RC"))
+}
+
+fn appearance_streams(transaction: &Transaction, annotation: ObjId) -> Result<Vec<ObjId>> {
+    let object = transaction.object(annotation)?;
+    let Some(appearance) = object.as_dict().and_then(|dict| dict.get("AP")) else {
+        return Ok(Vec::new());
+    };
+    let appearance = transaction.resolve(appearance)?;
+    let mut streams = Vec::new();
+    for (_, entry) in appearance.as_dict().map(Dict::iter).into_iter().flatten() {
+        match entry {
+            Object::Ref(id) => streams.push(*id),
+            Object::Dict(states) => streams.extend(states.iter().filter_map(|(_, state)| state.as_reference())),
+            _ => {}
+        }
+    }
+    Ok(streams)
 }
 
 fn popup_rect(page: &Page, (x, y): (f64, f64)) -> Result<Rect> {

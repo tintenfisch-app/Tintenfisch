@@ -81,12 +81,12 @@ impl ObjectStore {
         match self.overlay.get(&id.num) {
             Some(Slot::Object { generation, .. }) => *generation == id.generation,
             Some(Slot::Freed { .. }) => false,
-            None => self
-                .source
-                .xref()
-                .entry(id.num)
-                .is_some_and(|entry| !entry.is_free() && entry.generation() == id.generation),
+            None => self.is_in_source(id),
         }
+    }
+
+    pub fn is_in_source(&self, id: ObjId) -> bool {
+        self.source.xref().entry(id.num).is_some_and(|entry| !entry.is_free() && entry.generation() == id.generation)
     }
 
     pub(super) fn restates_source(&self, num: u32, slot: &Slot) -> bool {

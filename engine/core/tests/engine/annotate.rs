@@ -2,6 +2,7 @@ use crate::support;
 
 use support::fixtures;
 use support::rendering::library;
+use support::synthetic_pdf::{Row, SyntheticPdf};
 use tintenfisch::annotations::{Markup, MarkupStyle};
 use tintenfisch::document::Document;
 use tintenfisch::fonts::FontLibrary;
@@ -246,6 +247,58 @@ fn deleting_a_note_takes_its_popup_along_and_contents_can_change() {
     sheet.document.delete_annotation(page, note).unwrap();
     assert_eq!(annots(&sheet), 0);
     assert!(sheet.document.annotations(page).unwrap().is_empty());
+}
+
+fn contains(bytes: &[u8], text: &str) -> bool {
+    bytes.windows(text.len()).any(|window| window == text.as_bytes())
+}
+
+#[test]
+fn a_note_deleted_in_the_same_session_leaves_no_trace_in_the_saved_file() {
+    let original = fixtures::organize_features();
+    let mut sheet = Sheet::open(original.clone());
+    let page = sheet.page(0);
+    let note = sheet.add(page, &Markup::Note { at: (40.0, 60.0), text: "Sticky hello".to_string() });
+    sheet.document.set_annotation_contents(note, "Sticky hello again", "D:20261018130000Z", &sheet.library).unwrap();
+    sheet.document.delete_annotation(page, note).unwrap();
+    for optimize in [false, true] {
+        let saved = sheet.document.save(optimize).unwrap();
+        assert!(!contains(&saved, "Sticky hello"), "optimize {optimize}: the deleted text was written");
+        let reopened = Sheet::open(saved);
+        assert!(reopened.document.annotations(reopened.page(0)).unwrap().is_empty());
+    }
+    sheet.document.undo().unwrap();
+    assert_eq!(sheet.document.annotations(page).unwrap()[0].contents, "Sticky hello again");
+}
+
+fn commented_thread() -> Vec<u8> {
+    let mut pdf = SyntheticPdf::new("1.6");
+    pdf.object(1, 0, fixtures::CATALOG)
+        .object(2, 0, fixtures::PAGES)
+        .object(3, 0, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Annots [5 0 R 6 0 R 7 0 R 8 0 R 9 0 R] >>")
+        .stream(4, "", fixtures::CONTENT)
+        .object(5, 0, "<< /Type /Annot /Subtype /Text /Rect [10 10 30 30] /Contents (Secret question) /Popup 6 0 R >>")
+        .object(6, 0, "<< /Type /Annot /Subtype /Popup /Rect [40 10 140 60] /Parent 5 0 R >>")
+        .object(7, 0, "<< /Type /Annot /Subtype /Text /Rect [10 10 30 30] /Contents (Secret answer) /IRT 5 0 R >>")
+        .object(8, 0, "<< /Type /Annot /Subtype /Text /Rect [10 10 30 30] /Contents (Secret follow-up) /IRT 7 0 R >>")
+        .object(9, 0, "<< /Type /Annot /Subtype /Text /Rect [100 100 120 120] /Contents (Unrelated note) >>");
+    let rows: Vec<(u32, Row)> =
+        std::iter::once((0, Row::Free(65535))).chain((1..=9).map(|num| (num, Row::InUse(num)))).collect();
+    let start = pdf.xref_table(&rows, "/Size 10 /Root 1 0 R");
+    pdf.startxref(start).finish()
+}
+
+#[test]
+fn deleting_a_comment_from_the_file_drops_its_popup_and_replies_from_the_saved_file() {
+    let mut sheet = Sheet::open(commented_thread());
+    let page = sheet.page(0);
+    sheet.document.delete_annotation(page, tintenfisch::syntax::ObjId::new(5, 0)).unwrap();
+    let saved = sheet.document.save(false).unwrap();
+    assert!(!contains(&saved, "Secret"), "the thread is gone from the bytes");
+    let reopened = Sheet::open(saved);
+    let left: Vec<String> =
+        reopened.document.annotations(reopened.page(0)).unwrap().into_iter().map(|summary| summary.contents).collect();
+    assert_eq!(left, vec!["Unrelated note".to_string()]);
 }
 
 #[test]
