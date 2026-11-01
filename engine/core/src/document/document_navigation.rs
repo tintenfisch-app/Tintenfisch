@@ -1,4 +1,5 @@
 use crate::annotations::{annotation_list, write_annotation_list};
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::geometry::Rect;
@@ -21,6 +22,7 @@ impl Document {
         title: &str,
         target: Option<&Target>,
     ) -> Result<ObjId> {
+        self.require(EditRight::Assemble)?;
         let mut tree = OutlineTree::load(&self.store)?;
         self.store.transact("Add bookmark", "", |transaction| {
             let mut dict: Dict = [(Name::from("Title"), Object::String(encode_text(title)))].into_iter().collect();
@@ -55,6 +57,7 @@ impl Document {
     }
 
     pub fn add_link(&mut self, page: PageId, rect: Rect, target: &Target) -> Result<ObjId> {
+        self.require(EditRight::Annotate)?;
         let page = self.page(page)?;
         let rect = DisplaySpace::of(&page)?.rect_to_user(rect);
         self.store.transact("Add link", "", |transaction| {
@@ -79,6 +82,7 @@ impl Document {
     }
 
     pub fn update_link(&mut self, page: PageId, id: ObjId, rect: Rect, target: &Target) -> Result<()> {
+        self.require(EditRight::Annotate)?;
         let page = self.page(page)?;
         let rect = DisplaySpace::of(&page)?.rect_to_user(rect);
         self.store.transact("Change link", "", |transaction| {
@@ -103,6 +107,7 @@ impl Document {
     }
 
     fn edit_outline(&mut self, label: &str, change: impl FnOnce(&mut OutlineTree) -> Result<()>) -> Result<()> {
+        self.require(EditRight::Assemble)?;
         let mut tree = OutlineTree::load(&self.store)?;
         change(&mut tree)?;
         self.store.transact(label, "", |transaction| tree.write(transaction))

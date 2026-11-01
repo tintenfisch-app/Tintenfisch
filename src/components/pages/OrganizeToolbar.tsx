@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { FileDownload } from '@/services/FileDownload.ts'
 import { IconButton } from '@/components/ui/IconButton.tsx'
 import { usePagesStore } from '@/stores/pagesStore.ts'
+import { usePermission } from '@/hooks/usePermission.ts'
 import { Button } from '@/components/ui/Button.tsx'
 import { Input } from '@/components/ui/Field.tsx'
 import { Notice } from '@/components/ui/Text.tsx'
@@ -12,6 +13,7 @@ export function OrganizeToolbar() {
   const [password, setPassword] = useState('')
   const picker = useRef<HTMLInputElement>(null)
   const nothingSelected = selection.size === 0
+  const organizing = usePermission('assemble')
 
   async function insertFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -32,13 +34,13 @@ export function OrganizeToolbar() {
 
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-separator pb-3" role="toolbar" aria-label="Organize pages">
-      <IconButton icon="rotate-ccw" label="Rotate left" disabled={nothingSelected} onClick={() => void organize.rotate(-1)} />
-      <IconButton icon="rotate-cw" label="Rotate right" disabled={nothingSelected} onClick={() => void organize.rotate(1)} />
-      <IconButton icon="delete" label="Delete pages" disabled={nothingSelected} onClick={() => void organize.deleteSelected()} />
+      <IconButton icon="rotate-ccw" label="Rotate left" disabled={nothingSelected || !organizing} onClick={() => void organize.rotate(-1)} />
+      <IconButton icon="rotate-cw" label="Rotate right" disabled={nothingSelected || !organizing} onClick={() => void organize.rotate(1)} />
+      <IconButton icon="delete" label="Delete pages" disabled={nothingSelected || !organizing} onClick={() => void organize.deleteSelected()} />
       <IconButton icon="export" label="Extract pages" disabled={nothingSelected} onClick={() => void extract()} />
       <span className="mx-1 h-5 w-px bg-separator" />
-      <IconButton icon="file-add" label="Insert blank page" onClick={() => void organize.insertBlank()} />
-      <IconButton icon="import" label="Insert from file" onClick={() => picker.current?.click()} />
+      <IconButton icon="file-add" label="Insert blank page" disabled={!organizing} onClick={() => void organize.insertBlank()} />
+      <IconButton icon="import" label="Insert from file" disabled={!organizing} onClick={() => picker.current?.click()} />
       <input ref={picker} type="file" accept="application/pdf" onChange={insertFile} hidden />
       {lockedInsert && (
         <form className="mt-2 flex w-full flex-wrap items-center gap-2" onSubmit={unlock}>

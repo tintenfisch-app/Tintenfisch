@@ -4,7 +4,8 @@ import { useProtectionStore } from '@/stores/protectionStore.ts'
 import { FakeEnginePort } from '@tests/fakes/FakeEnginePort.ts'
 
 const everything: Permissions = { print: true, printFaithful: true, modify: true, copy: true, annotate: true, fillForms: true, assemble: true }
-const locked = { encrypted: true, ownerRights: false, permissions: { ...everything, copy: false } }
+const locked = { encrypted: true, ownerRights: false, permissions: { ...everything, copy: false }, withheld: [] }
+const restricted = { encrypted: true, ownerRights: false, permissions: { ...everything, fillForms: false, annotate: false }, withheld: ['fillForms', 'annotate', 'designForms'] }
 
 function createStore() {
   const port = FakeEnginePort.attach()
@@ -32,6 +33,22 @@ describe('protectionStore', () => {
     await port.answerNext({ ...locked, ownerRights: true })
     await right
     expect(useProtectionStore.getState()).toMatchObject({ notice: null, current: { ownerRights: true } })
+  })
+
+  it('reads the restrictions and lifts them once the permissions password is given', async () => {
+    const { port, store } = createStore()
+    expect(store.permits('fillForms')).toBe(true)
+    const loading = store.reload()
+    expect(last(port).kind).toBe('protection')
+    await port.answerNext(restricted)
+    await loading
+    expect(useProtectionStore.getState().permits('fillForms')).toBe(false)
+    expect(useProtectionStore.getState().permits('assemble')).toBe(true)
+    const unlocking = store.grantOwnerRights('boss')
+    await port.answerNext(true)
+    await port.answerNext({ ...restricted, ownerRights: true, withheld: [] })
+    await unlocking
+    expect(useProtectionStore.getState().permits('fillForms')).toBe(true)
   })
 
   it('protects with fresh random bytes and says the protection comes with the next save', async () => {

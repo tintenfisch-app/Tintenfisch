@@ -4,6 +4,7 @@ use crate::annotations::{
     Annotation, AnnotationSummary, HighlightPlan, Markup, MarkupBuilder, MarkupStyle, TextBoxAppearance,
     annotation_list, write_annotation_list,
 };
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::fonts::FontLibrary;
@@ -30,6 +31,10 @@ impl Document {
         style: &MarkupStyle,
         library: &FontLibrary,
     ) -> Result<ObjId> {
+        self.require(match markup {
+            Markup::RedactArea { .. } | Markup::RedactText { .. } => EditRight::ModifyContent,
+            _ => EditRight::Annotate,
+        })?;
         let page = self.page(page)?;
         let layout = self.view(library).text_layout(page.id)?;
         let (planned, replaced, notes) = match markup {
@@ -122,6 +127,7 @@ impl Document {
     }
 
     pub fn delete_annotation(&mut self, page: PageId, annotation: ObjId) -> Result<()> {
+        self.require(EditRight::Annotate)?;
         self.store.transact("Delete comment", "", |transaction| {
             let annotations = annotation_list(transaction, page.0)?;
             let listed: Vec<ObjId> = annotations.iter().filter_map(Object::as_reference).collect();
@@ -145,6 +151,7 @@ impl Document {
         date: &str,
         library: &FontLibrary,
     ) -> Result<Vec<PageId>> {
+        self.require(EditRight::Annotate)?;
         let pages = PageTree::new(&self.store).pages()?;
         let page = pages.into_iter().find(|page| {
             Annotation::on_page(&self.store, page)

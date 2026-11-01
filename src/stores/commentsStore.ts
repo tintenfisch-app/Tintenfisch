@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { pdfDate } from '@/lib/pdfDate.ts'
 import { CancelledError, engine } from '@/services/EngineClient.ts'
 import { onDocumentChanged, onDocumentReplaced, useDocumentStore } from '@/stores/documentStore.ts'
+import { useProtectionStore } from '@/stores/protectionStore.ts'
 import { useWorkspaceStore } from '@/stores/workspaceStore.ts'
 import type { Comment, MarkupRequest } from '@/types/protocol.ts'
 
@@ -38,6 +39,9 @@ export const useCommentsStore = create<CommentsStore>()((set, get) => {
 
   const commentOf = (id: string) => get().comments.find((comment) => comment.id === id)
 
+  const annotating = (markup?: MarkupRequest) =>
+    useProtectionStore.getState().permits(markup?.kind === 'redactArea' || markup?.kind === 'redactText' ? 'modifyContent' : 'annotate')
+
   return {
     comments: [],
     selected: null,
@@ -56,6 +60,7 @@ export const useCommentsStore = create<CommentsStore>()((set, get) => {
     },
 
     async add(pageId, markup) {
+      if (!annotating(markup)) return
       const style = { color: useWorkspaceStore.getState().activeColor(), width: STROKE_WIDTH, author: '', date: pdfDate(new Date()) }
       const takesText = markup.kind === 'note' || markup.kind === 'textBox'
       if (takesText) {
@@ -74,7 +79,7 @@ export const useCommentsStore = create<CommentsStore>()((set, get) => {
 
     async remove(id) {
       const comment = commentOf(id)
-      if (!comment) return
+      if (!comment || !annotating()) return
       await attempt(async () => {
         const change = await engine.request({ kind: 'deleteComment', pageId: comment.pageId, commentId: id })
         useDocumentStore.getState().touchPages(change.dirtyPages)
@@ -89,7 +94,7 @@ export const useCommentsStore = create<CommentsStore>()((set, get) => {
 
     async setContents(id, contents) {
       const comment = commentOf(id)
-      if (!comment || comment.contents === contents) return
+      if (!comment || comment.contents === contents || !annotating()) return
       await attempt(async () => {
         const change = await engine.request({ kind: 'setCommentContents', commentId: id, contents, date: pdfDate(new Date()) })
         useDocumentStore.getState().touchPages(change.dirtyPages)

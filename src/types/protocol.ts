@@ -157,10 +157,13 @@ export interface Permissions {
   assemble: boolean
 }
 
+export type EditRight = 'fillForms' | 'annotate' | 'designForms' | 'modifyContent' | 'assemble'
+
 export interface ProtectionState {
   encrypted: boolean
   ownerRights: boolean
   permissions: Permissions
+  withheld: EditRight[]
 }
 
 export interface InsertedImage {

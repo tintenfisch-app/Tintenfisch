@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { CancelledError, engine } from '@/services/EngineClient.ts'
 import { onDocumentChanged, onDocumentReplaced, useDocumentStore } from '@/stores/documentStore.ts'
+import { useProtectionStore } from '@/stores/protectionStore.ts'
 import { useToastStore } from '@/stores/toastStore.ts'
 import type { Box, FieldInput, FieldProperties, FormField, NewFieldKind } from '@/types/protocol.ts'
 
@@ -81,7 +82,7 @@ export const useFormsStore = create<FormsStore>()((set, get) => {
 
     async fill(fieldId, input) {
       const field = get().fields.find((candidate) => candidate.id === fieldId)
-      if (!field || field.readOnly || unchanged(field, input)) return
+      if (!field || field.readOnly || unchanged(field, input) || !useProtectionStore.getState().permits('fillForms')) return
       await attempt(async () => {
         const changed = await engine.request({ kind: 'setField', fieldId, input })
         useDocumentStore.getState().touchPages(changed.dirtyPages)

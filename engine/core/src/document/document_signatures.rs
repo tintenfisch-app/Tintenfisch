@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::document::document_form_design::{add_to_form, add_to_page, ensure_form, unique_name};
 use crate::error::{Error, Result};
@@ -15,6 +16,7 @@ const PICTURE: &str = "Signature";
 
 impl Document {
     pub fn add_signature(&mut self, page: PageId, rect: Rect, name: &str, mark: &SignatureMark) -> Result<ObjId> {
+        self.require(EditRight::DesignForms)?;
         let page = PageTree::new(&self.store)
             .pages()?
             .into_iter()

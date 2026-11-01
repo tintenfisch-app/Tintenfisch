@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::geometry::Rect;
@@ -9,6 +10,7 @@ use crate::syntax::{Dict, Object};
 
 impl Document {
     pub fn rotate_pages(&mut self, pages: &[PageId], quarter_turns: i64) -> Result<()> {
+        self.require(EditRight::Assemble)?;
         self.store.transact("Rotate pages", "", |transaction| {
             for page in PageTree::new(transaction.store()).pages()?.into_iter().filter(|page| pages.contains(&page.id))
             {
@@ -22,6 +24,7 @@ impl Document {
     }
 
     pub fn delete_pages(&mut self, pages: &[PageId]) -> Result<()> {
+        self.require(EditRight::Assemble)?;
         self.store.transact("Delete pages", "", |transaction| {
             let mut list = PageList::flatten(transaction)?;
             let gone: HashSet<_> = pages.iter().map(|page| page.0).filter(|page| list.pages().contains(page)).collect();
@@ -39,6 +42,7 @@ impl Document {
     }
 
     pub fn move_pages(&mut self, pages: &[PageId], before: Option<PageId>) -> Result<()> {
+        self.require(EditRight::Assemble)?;
         self.store.transact("Move pages", "", |transaction| {
             let mut list = PageList::flatten(transaction)?;
             let moving: HashSet<_> = pages.iter().map(|page| page.0).collect();
@@ -56,6 +60,7 @@ impl Document {
     }
 
     pub fn insert_blank_page(&mut self, before: Option<PageId>, (width, height): (f64, f64)) -> Result<PageId> {
+        self.require(EditRight::Assemble)?;
         self.store.transact("Insert page", "", |transaction| {
             let mut list = PageList::flatten(transaction)?;
             let page: Dict = [
@@ -76,6 +81,7 @@ impl Document {
     }
 
     pub fn insert_document(&mut self, other: &Document, before: Option<PageId>) -> Result<Vec<PageId>> {
+        self.require(EditRight::Assemble)?;
         let pages = PageTree::new(&other.store).pages()?;
         self.store.transact("Insert pages", "", |transaction| {
             let mut list = PageList::flatten(transaction)?;

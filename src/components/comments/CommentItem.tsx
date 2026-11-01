@@ -4,6 +4,7 @@ import { IconButton } from '@/components/ui/IconButton.tsx'
 import { useCommentsStore } from '@/stores/commentsStore.ts'
 import { useViewportStore } from '@/stores/viewportStore.ts'
 import { TextArea } from '@/components/ui/Field.tsx'
+import { usePermission } from '@/hooks/usePermission.ts'
 
 const KINDS: Record<string, string> = {
   Highlight: 'Highlight',
@@ -27,6 +28,7 @@ function readableDate(date: string): string {
 export function CommentItem({ comment, pageNumber, selected }: { comment: Comment; pageNumber: number; selected: boolean }) {
   const comments = useCommentsStore()
   const viewport = useViewportStore()
+  const annotating = usePermission('annotate')
   const field = useRef<HTMLTextAreaElement>(null)
   const typing = comments.typing === comment.id
 
@@ -54,7 +56,7 @@ export function CommentItem({ comment, pageNumber, selected }: { comment: Commen
       <header className="flex items-center gap-2">
         <span className="font-bold text-ink-strong">{KINDS[comment.subtype] ?? comment.subtype}</span>
         <span className="flex-1 text-xs text-ink-muted">Page {pageNumber}</span>
-        <IconButton icon="delete" label="Delete comment" tooltip="left" onClick={remove} />
+        <IconButton icon="delete" label="Delete comment" tooltip="left" disabled={!annotating} onClick={remove} />
       </header>
       <TextArea
         ref={field}
@@ -63,6 +65,7 @@ export function CommentItem({ comment, pageNumber, selected }: { comment: Commen
         defaultValue={comment.contents}
         placeholder="Add a comment"
         aria-label="Comment"
+        readOnly={!annotating}
         onBlur={(event) => void comments.setContents(comment.id, event.target.value)}
       />
       {(comment.author || comment.date) && (

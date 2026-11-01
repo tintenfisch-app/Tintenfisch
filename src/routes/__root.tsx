@@ -13,6 +13,7 @@ import { LinkDialog } from '@/components/links/LinkDialog.tsx'
 import { PrintDialog } from '@/components/printing/PrintDialog.tsx'
 import { PrintSheet } from '@/components/printing/PrintSheet.tsx'
 import { ProtectionDialog } from '@/components/protection/ProtectionDialog.tsx'
+import { RestrictionBanner } from '@/components/protection/RestrictionBanner.tsx'
 import { SignaturePad } from '@/components/signing/SignaturePad.tsx'
 import { SignatureStatusList } from '@/components/signing/SignatureStatusList.tsx'
 import { SigningDialog } from '@/components/signing/SigningDialog.tsx'
@@ -30,6 +31,7 @@ function Shell() {
       <div className="flex min-h-0 flex-1">
         <LeftDock />
         <div className="flex min-w-0 flex-1 flex-col bg-canvas">
+          <RestrictionBanner />
           <XfaNotice />
           <SignatureStatusList />
           <div className="relative flex min-h-0 flex-1 max-md:flex-col">

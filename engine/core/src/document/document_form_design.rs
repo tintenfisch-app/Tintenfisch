@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::annotations::{annotation_list, write_annotation_list};
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::fonts::FontLibrary;
@@ -17,6 +18,7 @@ const BORDER: [f64; 3] = [0.4, 0.4, 0.4];
 
 impl Document {
     pub fn add_field(&mut self, page: PageId, field: &NewField, library: &FontLibrary) -> Result<ObjId> {
+        self.require(EditRight::DesignForms)?;
         let page = PageTree::new(&self.store)
             .pages()?
             .into_iter()
@@ -116,6 +118,7 @@ impl Document {
         properties: &FieldProperties,
         library: &FontLibrary,
     ) -> Result<Vec<PageId>> {
+        self.require(EditRight::DesignForms)?;
         let fields = self.fields()?;
         let current = fields
             .iter()
@@ -167,6 +170,7 @@ impl Document {
         rect: crate::geometry::Rect,
         library: &FontLibrary,
     ) -> Result<()> {
+        self.require(EditRight::DesignForms)?;
         let page = PageTree::new(&self.store)
             .pages()?
             .into_iter()
@@ -193,6 +197,7 @@ impl Document {
     }
 
     pub fn delete_field(&mut self, field: ObjId) -> Result<Vec<PageId>> {
+        self.require(EditRight::DesignForms)?;
         let current = self
             .fields()?
             .into_iter()

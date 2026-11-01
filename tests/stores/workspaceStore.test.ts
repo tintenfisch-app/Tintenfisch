@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { useProtectionStore } from '@/stores/protectionStore.ts'
 import { MARKUP_COLORS, useWorkspaceStore } from '@/stores/workspaceStore.ts'
+import type { EditRight, ProtectionState } from '@/types/protocol.ts'
+
+const everything = { print: true, printFaithful: true, modify: true, copy: true, annotate: true, fillForms: true, assemble: true }
+const withholding = (withheld: EditRight[]): ProtectionState => ({ encrypted: true, ownerRights: false, permissions: everything, withheld })
 
 const workspace = () => useWorkspaceStore.getState()
 
@@ -14,6 +19,21 @@ describe('workspaceStore', () => {
     workspace().choose('rectangle')
     expect(workspace().activeColor()).toBe(MARKUP_COLORS[1])
     expect(workspace()).toMatchObject({ color: MARKUP_COLORS[1], highlightColor: MARKUP_COLORS[2] })
+  })
+
+  it('keeps the tools a restricted document withholds out of reach', () => {
+    workspace().showLeft('edit')
+    expect(workspace()).toMatchObject({ left: 'edit', tool: 'edit' })
+    useProtectionStore.setState({ current: withholding(['annotate', 'modifyContent']) })
+    expect(workspace()).toMatchObject({ left: 'tools', tool: 'select' })
+    workspace().choose('ink')
+    workspace().showLeft('edit')
+    expect(workspace()).toMatchObject({ left: 'tools', tool: 'select' })
+    workspace().choose('form')
+    expect(workspace().tool).toBe('form')
+    useProtectionStore.setState({ current: withholding([]) })
+    workspace().choose('ink')
+    expect(workspace().tool).toBe('ink')
   })
 
   it('keeps one panel open on each side and always shows a left panel', () => {

@@ -1,3 +1,4 @@
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::fonts::FontLibrary;
@@ -23,6 +24,7 @@ impl Document {
     }
 
     pub fn set_field(&mut self, field: ObjId, input: FieldInput, library: &FontLibrary) -> Result<Vec<PageId>> {
+        self.require(EditRight::FillForms)?;
         let field = self
             .fields()?
             .into_iter()

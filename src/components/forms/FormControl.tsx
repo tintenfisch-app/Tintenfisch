@@ -1,6 +1,7 @@
 import type { CSSProperties, KeyboardEvent } from 'react'
 import type { FormField, FormWidget } from '@/types/protocol.ts'
 import { useFormsStore } from '@/stores/formsStore.ts'
+import { usePermission } from '@/hooks/usePermission.ts'
 
 const TEXT = 'pointer-events-auto absolute m-0 disabled:cursor-default resize-none border border-transparent bg-transparent px-0.5 py-0 font-[Helvetica,Arial,sans-serif] text-transparent caret-transparent hover:border-selection/60 focus:bg-white focus:text-caret focus:caret-auto focus:outline-2 focus:outline-selection'
 
@@ -10,6 +11,8 @@ const FONT_SHARE = 0.6
 
 export function FormControl({ field, widget, cssScale }: { field: FormField; widget: FormWidget; cssScale: number }) {
   const forms = useFormsStore()
+  const filling = usePermission('fillForms')
+  const locked = field.readOnly || !filling
   const style: CSSProperties = {
     left: widget.rect.x * cssScale,
     top: widget.rect.y * cssScale,
@@ -33,7 +36,7 @@ export function FormControl({ field, widget, cssScale }: { field: FormField; wid
           aria-label={label}
           maxLength={field.maxLength ?? undefined}
           defaultValue={field.text}
-          disabled={field.readOnly}
+          disabled={locked}
           onBlur={(event) => commit(event.target.value)}
         />
       ) : (
@@ -45,7 +48,7 @@ export function FormControl({ field, widget, cssScale }: { field: FormField; wid
           type={field.password ? 'password' : 'text'}
           maxLength={field.maxLength ?? undefined}
           defaultValue={field.text}
-          disabled={field.readOnly}
+          disabled={locked}
           onKeyDown={leaveOnEnter}
           onBlur={(event) => commit(event.target.value)}
         />
@@ -59,7 +62,7 @@ export function FormControl({ field, widget, cssScale }: { field: FormField; wid
           aria-label={label}
           type="checkbox"
           checked={field.on !== null}
-          disabled={field.readOnly}
+          disabled={locked}
           onChange={(event) => void forms.fill(field.id, { kind: 'checked', checked: event.target.checked })}
         />
       )
@@ -72,7 +75,7 @@ export function FormControl({ field, widget, cssScale }: { field: FormField; wid
           type="radio"
           name={field.id}
           checked={widget.onState !== null && widget.onState === field.on}
-          disabled={field.readOnly}
+          disabled={locked}
           onChange={() => void forms.fill(field.id, { kind: 'radio', widget: widget.id })}
         />
       )
@@ -85,7 +88,7 @@ export function FormControl({ field, widget, cssScale }: { field: FormField; wid
           aria-label={label}
           multiple={field.kind === 'list'}
           value={field.kind === 'list' ? field.chosen : (field.chosen[0] ?? '')}
-          disabled={field.readOnly}
+          disabled={locked}
           onChange={(event) =>
             void forms.fill(field.id, { kind: 'choices', choices: Array.from(event.target.selectedOptions, (option) => option.value) })
           }

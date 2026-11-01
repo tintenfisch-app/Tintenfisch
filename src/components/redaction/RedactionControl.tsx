@@ -2,6 +2,7 @@ import { useCommentsStore } from '@/stores/commentsStore.ts'
 import { useRedactionStore } from '@/stores/redactionStore.ts'
 import { useWorkspaceStore, type Tool } from '@/stores/workspaceStore.ts'
 import { Button } from '@/components/ui/Button.tsx'
+import { usePermission } from '@/hooks/usePermission.ts'
 
 const SHOWN_WITH: readonly Tool[] = ['select', 'redactText', 'redactArea']
 
@@ -10,6 +11,7 @@ export function RedactionControl() {
   const { comments } = useCommentsStore()
   const { tool } = useWorkspaceStore()
   const { confirming, applying, notice } = redaction
+  const editing = usePermission('modifyContent')
   const marks = comments.filter((comment) => comment.subtype === 'Redact').length
   if ((marks === 0 && !notice) || !(SHOWN_WITH.includes(tool) || confirming || applying)) return null
   return (
@@ -28,7 +30,7 @@ export function RedactionControl() {
         </>
       ) : (
         marks > 0 && (
-          <Button disabled={applying} onClick={() => redaction.requestApply()}>
+          <Button disabled={applying || !editing} onClick={() => redaction.requestApply()}>
             {applying ? 'Applying redactions' : `Apply redactions (${marks})`}
           </Button>
         )

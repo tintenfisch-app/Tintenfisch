@@ -1,4 +1,4 @@
-use crate::crypt::{Permissions, Protection};
+use crate::crypt::{EditRight, Permissions, Protection};
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::save::Encryption;
@@ -8,6 +8,15 @@ pub struct ProtectionState {
     pub encrypted: bool,
     pub permissions: Permissions,
     pub owner_rights: bool,
+}
+
+impl ProtectionState {
+    pub fn withheld(&self) -> Vec<EditRight> {
+        if self.owner_rights {
+            return Vec::new();
+        }
+        EditRight::ALL.into_iter().filter(|right| !right.granted_by(self.permissions)).collect()
+    }
 }
 
 impl Document {
@@ -45,6 +54,17 @@ impl Document {
         self.encryption = Some(Encryption::Plain);
         self.protection_changes += 1;
         Ok(())
+    }
+
+    pub(super) fn require(&self, right: EditRight) -> Result<()> {
+        if self.protection().withheld().contains(&right) {
+            Err(Error::needs_password(format!(
+                "this document does not allow {} without its permissions password",
+                right.action()
+            )))
+        } else {
+            Ok(())
+        }
     }
 
     fn require_owner_rights(&self) -> Result<()> {

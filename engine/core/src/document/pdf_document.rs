@@ -1,3 +1,4 @@
+use crate::crypt::EditRight;
 use crate::document::{DocumentCaches, DocumentView};
 use crate::edit::{EditPlan, NewParagraph, ParagraphEdit, ParagraphPlanner, ParagraphText};
 use crate::error::Result;
@@ -68,6 +69,7 @@ impl Document {
         if plan.is_empty() {
             return Ok(());
         }
+        self.require(EditRight::ModifyContent)?;
         self.store.transact("Edit text", ui_state, |transaction| plan.apply(transaction))
     }
 

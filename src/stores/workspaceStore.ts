@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { NewFieldKind, Rgb } from '@/types/protocol.ts'
+import { useProtectionStore, withholds } from '@/stores/protectionStore.ts'
+import type { EditRight, NewFieldKind, ProtectionState, Rgb } from '@/types/protocol.ts'
 
 export type Tool = 'select' | 'edit' | 'addText' | 'addImage' | 'highlight' | 'note' | 'textBox' | 'ink' | 'rectangle' | 'ellipse' | 'arrow' | 'stamp' | 'redactText' | 'redactArea' | 'form' | 'link' | 'sign'
 
@@ -11,6 +12,32 @@ export const EDITING_TOOLS: readonly Tool[] = ['edit', 'addText', 'addImage', 'l
 const EDIT_PANEL_TOOLS: readonly Tool[] = [...EDITING_TOOLS, 'redactText', 'redactArea']
 
 export const DRAWING_TOOLS: readonly Tool[] = ['note', 'textBox', 'ink', 'rectangle', 'ellipse', 'arrow', 'stamp', 'redactArea']
+
+const TOOL_RIGHTS: Readonly<Partial<Record<Tool, EditRight>>> = {
+  edit: 'modifyContent',
+  addText: 'modifyContent',
+  addImage: 'modifyContent',
+  redactText: 'modifyContent',
+  redactArea: 'modifyContent',
+  link: 'annotate',
+  highlight: 'annotate',
+  note: 'annotate',
+  textBox: 'annotate',
+  ink: 'annotate',
+  rectangle: 'annotate',
+  ellipse: 'annotate',
+  arrow: 'annotate',
+  stamp: 'annotate',
+  form: 'designForms',
+  sign: 'designForms',
+}
+
+export function toolWithheld(current: ProtectionState | null, tool: Tool): boolean {
+  const right = TOOL_RIGHTS[tool]
+  return right !== undefined && withholds(current, right)
+}
+
+const usable = (tool: Tool) => !toolWithheld(useProtectionStore.getState().current, tool)
 
 export const MARKUP_COLORS: readonly Rgb[] = [
   [0.86, 0.15, 0.15],
@@ -59,6 +86,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   },
 
   choose(tool) {
+    if (!usable(tool)) return
     const { left } = get()
     const leavesEdit = left === 'edit' && !EDIT_PANEL_TOOLS.includes(tool)
     set({ tool, left: EDITING_TOOLS.includes(tool) ? 'edit' : leavesEdit ? 'tools' : left })
@@ -66,7 +94,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
 
   leaveTool() {
     const { tool, left } = get()
-    if (tool !== 'select' && tool !== 'edit') get().choose(left === 'edit' ? 'edit' : 'select')
+    if (tool !== 'select' && tool !== 'edit') get().choose(left === 'edit' && usable('edit') ? 'edit' : 'select')
   },
 
   setColor(color) {
@@ -84,9 +112,13 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   showLeft(left) {
     const { tool } = get()
     const editing = EDITING_TOOLS.includes(tool)
-    if (left === 'edit' && !EDIT_PANEL_TOOLS.includes(tool)) set({ left, tool: 'edit' })
-    else if (left !== 'edit' && editing) set({ left, tool: 'select' })
-    else if (left !== get().left) set({ left })
+    if (left === 'edit' && !EDIT_PANEL_TOOLS.includes(tool)) {
+      if (usable('edit')) set({ left, tool: 'edit' })
+    } else if (left !== 'edit' && editing) {
+      set({ left, tool: 'select' })
+    } else if (left !== get().left) {
+      set({ left })
+    }
   },
 
   showRight(right) {
@@ -112,3 +144,9 @@ export function onToolChosen(listener: (tool: Tool, previous: Tool) => void): ()
     if (tool !== previous.tool) listener(tool, previous.tool)
   })
 }
+
+useProtectionStore.subscribe(({ current }, previous) => {
+  if (current === previous.current) return
+  const { tool, left } = useWorkspaceStore.getState()
+  if (toolWithheld(current, tool)) useWorkspaceStore.setState({ tool: 'select', left: left === 'edit' ? 'tools' : left })
+})
