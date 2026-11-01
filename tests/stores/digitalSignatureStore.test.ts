@@ -4,7 +4,7 @@ import { signedName, useDigitalSignatureStore } from '@/stores/digitalSignatureS
 import { useDocumentStore } from '@/stores/documentStore.ts'
 import { FakeEnginePort } from '@tests/fakes/FakeEnginePort.ts'
 
-const openedResult = { status: 'opened', version: '1.7', byteLength: 4, objectCount: 9, pageCount: 1, repaired: false }
+const openedResult = { status: 'opened', version: '1.7', byteLength: 4, objectCount: 9, pageCount: 1, repaired: false, xfa: 'absent' }
 const pages = [{ id: '3-0', width: 612, height: 792, rotate: 0 }]
 const request = { fieldId: '70-0', certificate: new Uint8Array([48, 130]), password: 'secret', reason: 'Approved', location: '' }
 const now = Date.UTC(2026, 9, 18, 12, 0, 0)

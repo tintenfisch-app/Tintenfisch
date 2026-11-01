@@ -4,7 +4,7 @@ use support::fixtures;
 use support::rendering::library;
 use tintenfisch::document::{Document, FieldInput};
 use tintenfisch::fonts::FontLibrary;
-use tintenfisch::forms::{Field, FieldKind, FieldValue};
+use tintenfisch::forms::{Field, FieldKind, FieldValue, XfaContent};
 use tintenfisch::pages::PageId;
 use tintenfisch::syntax::{Name, ObjId, Object};
 
@@ -145,6 +145,18 @@ fn a_text_field_keeps_to_its_own_or_its_parents_max_length_through_saving() {
     let reopened = Form::open(form.document.save(false).unwrap());
     assert_eq!(reopened.field("code.short").value, FieldValue::Text("12345".to_string()));
     assert_eq!(reopened.field("code.long").value, FieldValue::Text("12345678".to_string()));
+}
+
+#[test]
+fn a_form_tells_whether_it_carries_xfa_and_whether_only_xfa_can_draw_it() {
+    let xfa =
+        |catalog: &str, form: &str| Form::open(fixtures::limited_form(catalog, form)).document.xfa_content().unwrap();
+    assert_eq!(xfa("", ""), XfaContent::Absent);
+    assert_eq!(xfa("", "/XFA 7 0 R"), XfaContent::Hybrid);
+    assert_eq!(xfa("", "/XFA [(template) 7 0 R]"), XfaContent::Hybrid);
+    assert_eq!(xfa("/NeedsRendering true", "/XFA 7 0 R"), XfaContent::Dynamic);
+    assert_eq!(xfa("/NeedsRendering true", ""), XfaContent::Absent);
+    assert_eq!(Form::open(fixtures::fillable_form()).document.xfa_content().unwrap(), XfaContent::Absent);
 }
 
 #[test]

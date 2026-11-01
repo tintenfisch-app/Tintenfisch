@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { onDocumentReplaced, useDocumentStore, type DocumentState } from '@/stores/documentStore.ts'
 import { FakeEnginePort } from '@tests/fakes/FakeEnginePort.ts'
 
-const opened = { version: '1.7', byteLength: 4, objectCount: 9, pageCount: 1, repaired: false }
+const opened = { version: '1.7', byteLength: 4, objectCount: 9, pageCount: 1, repaired: false, xfa: 'absent' }
 const openedResult = { status: 'opened', ...opened }
 const pages = [{ id: '3-0', width: 612, height: 792, rotate: 0 }]
 

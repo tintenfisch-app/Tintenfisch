@@ -1,11 +1,14 @@
 export type Priority = 'interactive' | 'visible' | 'prefetch'
 
+export type XfaContent = 'absent' | 'hybrid' | 'dynamic'
+
 export interface Opened {
   version: string
   byteLength: number
   objectCount: number
   pageCount: number
   repaired: boolean
+  xfa: XfaContent
 }
 
 export type OpenResult = ({ status: 'opened' } & Opened) | { status: 'locked'; wrongPassword: boolean }

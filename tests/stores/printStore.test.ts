@@ -26,7 +26,7 @@ async function createStore() {
   const port = FakeEnginePort.attach()
   const documents = useDocumentStore.getState()
   const opening = documents.open('book.pdf', new Uint8Array(4))
-  await port.answerNext({ status: 'opened', version: '1.7', byteLength: 4, objectCount: 9, pageCount: 3, repaired: false })
+  await port.answerNext({ status: 'opened', version: '1.7', byteLength: 4, objectCount: 9, pageCount: 3, repaired: false, xfa: 'absent' })
   await port.answerNext(pages)
   await opening
   const viewport = useViewportStore.getState()

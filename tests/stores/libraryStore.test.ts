@@ -6,7 +6,7 @@ import { useLibraryStore } from '@/stores/libraryStore.ts'
 import { useToastStore } from '@/stores/toastStore.ts'
 import { FakeEnginePort } from '@tests/fakes/FakeEnginePort.ts'
 
-const opened = { status: 'opened', version: '1.7', byteLength: 1, objectCount: 3, pageCount: 1, repaired: false }
+const opened = { status: 'opened', version: '1.7', byteLength: 1, objectCount: 3, pageCount: 1, repaired: false, xfa: 'absent' }
 const pdf = new TextEncoder().encode('%PDF-1.7\n')
 const pages = [{ id: '3-0', width: 612, height: 792, rotate: 0 }]
 

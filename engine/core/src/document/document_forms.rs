@@ -1,7 +1,7 @@
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::fonts::FontLibrary;
-use crate::forms::{Field, FieldKind, FieldTree, FieldValue, on_state, refresh_appearances};
+use crate::forms::{Field, FieldKind, FieldTree, FieldValue, XfaContent, on_state, refresh_appearances};
 use crate::pages::PageId;
 use crate::syntax::{Name, ObjId, Object, encode_text};
 
@@ -16,6 +16,10 @@ pub enum FieldInput {
 impl Document {
     pub fn fields(&self) -> Result<Vec<Field>> {
         FieldTree::new(&self.store).fields()
+    }
+
+    pub fn xfa_content(&self) -> Result<XfaContent> {
+        XfaContent::of(&self.store)
     }
 
     pub fn set_field(&mut self, field: ObjId, input: FieldInput, library: &FontLibrary) -> Result<Vec<PageId>> {

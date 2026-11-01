@@ -14,7 +14,7 @@ let otherTab: DocumentChannel | null = null
 beforeEach(async () => {
   port = FakeEnginePort.attach()
   const opening = useDocumentStore.getState().open('report.pdf', new Uint8Array([1]))
-  await port.answerNext({ status: 'opened', version: '1.7', byteLength: 1, objectCount: 3, pageCount: 1, repaired: false })
+  await port.answerNext({ status: 'opened', version: '1.7', byteLength: 1, objectCount: 3, pageCount: 1, repaired: false, xfa: 'absent' })
   await port.answerNext([{ id: '3-0', width: 612, height: 792, rotate: 0 }])
   await opening
   stored = await documentLibrary.add('report.pdf', new Uint8Array([1]))

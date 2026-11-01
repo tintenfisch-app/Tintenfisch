@@ -1,5 +1,6 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router'
 import { FontConsentDialog } from '@/components/editing/FontConsentDialog.tsx'
+import { XfaNotice } from '@/components/forms/XfaNotice.tsx'
 import { FileDropZone } from '@/components/home/FileDropZone.tsx'
 import { AppHeader } from '@/components/layout/AppHeader.tsx'
 import { ContextBar } from '@/components/layout/ContextBar.tsx'
@@ -29,6 +30,7 @@ function Shell() {
       <div className="flex min-h-0 flex-1">
         <LeftDock />
         <div className="flex min-w-0 flex-1 flex-col bg-canvas">
+          <XfaNotice />
           <SignatureStatusList />
           <div className="relative flex min-h-0 flex-1 max-md:flex-col">
             <QuickToolbar />

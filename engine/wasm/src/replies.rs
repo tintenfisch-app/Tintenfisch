@@ -1,5 +1,6 @@
 use serde::Serialize;
 use tintenfisch::document::{Document, PageSummary};
+use tintenfisch::forms::XfaContent;
 use tintenfisch::geometry::Rect;
 use tintenfisch::page_images::ImageFrame;
 use tintenfisch::text::{TextBox, TextPosition};
@@ -23,6 +24,7 @@ pub struct Opened {
     object_count: usize,
     page_count: usize,
     repaired: bool,
+    xfa: &'static str,
 }
 
 impl Opened {
@@ -35,6 +37,11 @@ impl Opened {
             object_count: document.store().ids().len(),
             page_count: tintenfisch::pages::PageTree::new(document.store()).pages()?.len(),
             repaired: file.is_repaired(),
+            xfa: match document.xfa_content()? {
+                XfaContent::Absent => "absent",
+                XfaContent::Hybrid => "hybrid",
+                XfaContent::Dynamic => "dynamic",
+            },
         })
     }
 }
