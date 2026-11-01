@@ -4,7 +4,7 @@ use crate::syntax::{Dict, Name, ObjId};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldKind {
-    Text { multiline: bool, password: bool, comb: Option<usize> },
+    Text { multiline: bool, password: bool, max_length: Option<usize>, comb: bool },
     Checkbox,
     Radio,
     PushButton,
@@ -101,9 +101,8 @@ impl FieldKind {
             FieldKind::Text {
                 multiline: flags & FieldFlags::MULTILINE != 0,
                 password: flags & FieldFlags::PASSWORD != 0,
-                comb: max_length
-                    .filter(|_| flags & FieldFlags::COMB != 0)
-                    .and_then(|length| usize::try_from(length).ok()),
+                max_length: max_length.and_then(|length| usize::try_from(length).ok()).filter(|length| *length > 0),
+                comb: flags & FieldFlags::COMB != 0,
             }
         } else if field_type.is("Btn") {
             if flags & FieldFlags::PUSH_BUTTON != 0 {

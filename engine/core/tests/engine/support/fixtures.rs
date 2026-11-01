@@ -648,6 +648,27 @@ pub fn fillable_form() -> Vec<u8> {
     pdf.startxref(start).finish()
 }
 
+pub fn limited_form(catalog: &str, form: &str) -> Vec<u8> {
+    let widget = |rect: &str| format!("/Type /Annot /Subtype /Widget /Rect [{rect}] /P 4 0 R /F 4");
+    let mut pdf = SyntheticPdf::new("1.7");
+    pdf.object(1, 0, &format!("<< /Type /Catalog /Pages 2 0 R /AcroForm 3 0 R {catalog} >>"))
+        .object(2, 0, "<< /Type /Pages /Kids [4 0 R] /Count 1 >>")
+        .object(3, 0, &format!("<< /Fields [10 0 R] /DR << /Font << /Helv 5 0 R >> >> /DA (/Helv 10 Tf 0 g) {form} >>"))
+        .object(4, 0, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 6 0 R /Annots [11 0 R 12 0 R] >>")
+        .object(5, 0, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+        .stream(6, "", b"0 G 10 10 180 180 re S")
+        .stream(7, "", b"<xdp:xdp xmlns:xdp=\"http://ns.adobe.com/xdp/\"><template/></xdp:xdp>")
+        .object(10, 0, "<< /T (code) /FT /Tx /MaxLen 5 /Kids [11 0 R 12 0 R] >>")
+        .object(11, 0, &format!("<< /T (short) /Parent 10 0 R {} >>", widget("20 140 180 160")))
+        .object(12, 0, &format!("<< /T (long) /Parent 10 0 R /MaxLen 8 {} >>", widget("20 100 180 120")));
+    let used = [1, 2, 3, 4, 5, 6, 7, 10, 11, 12];
+    let rows: Vec<(u32, Row)> = std::iter::once((0, Row::Free(65535)))
+        .chain((1..=12).map(|num| (num, if used.contains(&num) { Row::InUse(num) } else { Row::Free(0) })))
+        .collect();
+    let start = pdf.xref_table(&rows, "/Size 13 /Root 1 0 R");
+    pdf.startxref(start).finish()
+}
+
 fn gradient(width: usize, height: usize) -> Vec<u8> {
     (0..width * height)
         .flat_map(|index| {

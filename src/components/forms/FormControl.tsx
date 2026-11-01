@@ -31,6 +31,7 @@ export function FormControl({ field, widget, cssScale }: { field: FormField; wid
           className={TEXT}
           style={style}
           aria-label={label}
+          maxLength={field.maxLength ?? undefined}
           defaultValue={field.text}
           disabled={field.readOnly}
           onBlur={(event) => commit(event.target.value)}
