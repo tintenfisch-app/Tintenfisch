@@ -32,6 +32,7 @@ interface WorkspaceStore {
   sheet: boolean
   activeColor(): Rgb
   choose(tool: Tool): void
+  leaveTool(): void
   setColor(color: Rgb): void
   setStampLabel(stampLabel: string): void
   setFieldKind(fieldKind: NewFieldKind): void
@@ -61,6 +62,11 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     const { left } = get()
     const leavesEdit = left === 'edit' && !EDIT_PANEL_TOOLS.includes(tool)
     set({ tool, left: EDITING_TOOLS.includes(tool) ? 'edit' : leavesEdit ? 'tools' : left })
+  },
+
+  leaveTool() {
+    const { tool, left } = get()
+    if (tool !== 'select' && tool !== 'edit') get().choose(left === 'edit' ? 'edit' : 'select')
   },
 
   setColor(color) {

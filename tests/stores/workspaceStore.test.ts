@@ -36,6 +36,20 @@ describe('workspaceStore', () => {
     expect(workspace()).toMatchObject({ tool: 'ink', left: 'tools' })
   })
 
+  it('leaves a tool for select, or for edit when the edit panel is open', () => {
+    workspace().choose('rectangle')
+    workspace().leaveTool()
+    expect(workspace().tool).toBe('select')
+    workspace().choose('addText')
+    workspace().leaveTool()
+    expect(workspace()).toMatchObject({ tool: 'edit', left: 'edit' })
+    workspace().choose('redactArea')
+    workspace().leaveTool()
+    expect(workspace()).toMatchObject({ tool: 'edit', left: 'edit' })
+    workspace().leaveTool()
+    expect(workspace().tool).toBe('edit')
+  })
+
   it('tells listeners only about real changes', () => {
     let calls = 0
     const stop = useWorkspaceStore.subscribe(() => calls++)

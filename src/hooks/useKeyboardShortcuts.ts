@@ -51,15 +51,21 @@ function press(event: KeyboardEvent) {
   }
   if (event.key === 'Escape' && finishesEdit(event.target)) return
   if (isEditable(event.target)) return
-  if (event.key === 'Escape') useSelectionStore.getState().clear()
-  const { tool } = useWorkspaceStore.getState()
+  const workspace = useWorkspaceStore.getState()
+  const { tool } = workspace
+  const selection = useSelectionStore.getState()
   const comments = useCommentsStore.getState()
-  if (comments.selected) removeOrDeselect(event, comments.removeSelected, () => comments.select(null))
   const forms = useFormsStore.getState()
-  if (tool === 'form' && forms.selected) removeOrDeselect(event, forms.deleteSelected, () => forms.select(null))
   const images = useImagesStore.getState()
-  if (images.selected) removeOrDeselect(event, images.removeSelected, () => images.select(null))
   const links = useLinksStore.getState()
+  const holding = selection.selection || comments.selected || (tool === 'form' && forms.selected) || images.selected || (tool === 'link' && (links.selected || links.draft))
+  if (event.key === 'Escape') {
+    selection.clear()
+    if (!holding) workspace.leaveTool()
+  }
+  if (comments.selected) removeOrDeselect(event, comments.removeSelected, () => comments.select(null))
+  if (tool === 'form' && forms.selected) removeOrDeselect(event, forms.deleteSelected, () => forms.select(null))
+  if (images.selected) removeOrDeselect(event, images.removeSelected, () => images.select(null))
   if (tool === 'link' && links.selected && !links.draft) removeOrDeselect(event, links.removeSelected, () => links.select(null))
 }
 
