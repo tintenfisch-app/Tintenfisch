@@ -4,9 +4,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use support::fixtures;
-use support::rendering::TestRenderer;
-use tintenfisch::crypt::{Permissions, Protection};
-use tintenfisch::document::Document;
+use support::rendering::{TestRenderer, library};
+use support::synthetic_pdf::{Row, SyntheticPdf};
+use tintenfisch::annotations::{Markup, MarkupStyle};
+use tintenfisch::crypt::{EditRight, Permissions, Protection};
+use tintenfisch::document::{Document, FieldInput};
 use tintenfisch::error::ErrorKind;
 use tintenfisch::file::SourceFile;
 use tintenfisch::syntax::Object;
@@ -120,6 +122,114 @@ fn removing_the_protection_of_an_rc4_file_gives_a_plain_file() {
     let plain = document.save(false).unwrap();
     assert!(!SourceFile::open(plain.clone()).unwrap().trailer().contains("Encrypt"));
     assert_eq!(rendering(plain, ""), rendering(source, "secret"));
+}
+
+fn versioned(header: &str, catalog_version: &str) -> Vec<u8> {
+    let mut pdf = SyntheticPdf::new(header);
+    pdf.object(1, 0, &format!("<< /Type /Catalog /Pages 2 0 R {catalog_version} >>"))
+        .object(2, 0, fixtures::PAGES)
+        .object(3, 0, fixtures::PAGE)
+        .stream(4, "", fixtures::CONTENT);
+    let rows: Vec<(u32, Row)> =
+        std::iter::once((0, Row::Free(65535))).chain((1..=4).map(|num| (num, Row::InUse(num)))).collect();
+    let start = pdf.xref_table(&rows, "/Size 5 /Root 1 0 R");
+    pdf.startxref(start).finish()
+}
+
+fn protected_version(bytes: Vec<u8>) -> (Vec<u8>, Option<String>) {
+    let mut document = Document::open(bytes, "").unwrap();
+    document.protect(&protection("user", "boss", Permissions::ALL), &entropy(6)).unwrap();
+    let saved = document.save(false).unwrap();
+    let file = SourceFile::open_with_password(saved.clone(), "boss").unwrap();
+    let catalog = file.object(file.trailer().get("Root").and_then(Object::as_reference).unwrap()).unwrap();
+    let version =
+        catalog.as_dict().unwrap().name("Version").map(|name| String::from_utf8_lossy(name.as_bytes()).into_owned());
+    (saved[..9].to_vec(), version)
+}
+
+#[test]
+fn aes_256_protection_declares_pdf_2_0_without_lowering_a_newer_version() {
+    assert_eq!(protected_version(versioned("1.4", "")), (b"%PDF-2.0\n".to_vec(), None));
+    assert_eq!(protected_version(versioned("1.4", "/Version /1.7")), (b"%PDF-2.0\n".to_vec(), Some("2.0".into())));
+    assert_eq!(protected_version(versioned("2.0", "/Version /2.1")), (b"%PDF-2.0\n".to_vec(), Some("2.1".into())));
+    assert_eq!(protected_version(versioned("2.1", "")), (b"%PDF-2.1\n".to_vec(), None));
+}
+
+fn restricted_form(user: &str, permissions: Permissions) -> Vec<u8> {
+    let mut document = Document::open(fixtures::fillable_form(), "").unwrap();
+    document.protect(&protection(user, "boss", permissions), &entropy(9)).unwrap();
+    document.save(false).unwrap()
+}
+
+fn fill_last_name(document: &mut Document) -> tintenfisch::error::Result<()> {
+    let field = document.fields().unwrap().into_iter().find(|field| field.name == "person.last").unwrap();
+    document.set_field(field.id, FieldInput::Text("Lovelace".to_string()), &library()).map(|_| ())
+}
+
+#[test]
+fn a_restricted_document_refuses_every_edit_its_permissions_withhold_until_the_owner_password_is_given() {
+    let saved = restricted_form("", Permissions { print: true, ..NONE });
+    let mut document = Document::open(saved.clone(), "").unwrap();
+    assert_eq!(document.protection().withheld(), EditRight::ALL);
+    let page = document.view(&library()).pages().unwrap()[0].id;
+    let style = MarkupStyle { color: [1.0, 0.0, 0.0], width: 1.0, author: String::new(), date: String::new() };
+    let note = Markup::Note { at: (20.0, 20.0), text: "note".to_string() };
+    let field = document.fields().unwrap()[0].id;
+    let refusals = [
+        fill_last_name(&mut document).err(),
+        document.add_markup(page, &note, &style, &library()).err(),
+        document.delete_field(field).err(),
+        document.rotate_pages(&[page], 1).err(),
+        document.add_bookmark(None, 0, "Start", None).err(),
+        document.apply_redactions(&library()).err(),
+    ];
+    for refusal in refusals {
+        assert_eq!(refusal.map(|error| error.kind), Some(ErrorKind::NeedsPassword));
+    }
+    assert_eq!(document.save(false).unwrap(), saved, "an untouched restricted file still saves as it was");
+    assert!(document.grant_owner_rights("boss"));
+    assert!(document.protection().withheld().is_empty());
+    fill_last_name(&mut document).unwrap();
+    document.rotate_pages(&[page], 1).unwrap();
+}
+
+#[test]
+fn a_document_that_allows_only_form_filling_takes_values_and_refuses_the_rest() {
+    let saved = restricted_form("", Permissions { print: true, fill_forms: true, ..NONE });
+    let mut document = Document::open(saved, "").unwrap();
+    assert_eq!(
+        document.protection().withheld(),
+        [EditRight::Annotate, EditRight::DesignForms, EditRight::ModifyContent, EditRight::Assemble]
+    );
+    fill_last_name(&mut document).unwrap();
+    let page = document.view(&library()).pages().unwrap()[0].id;
+    assert_eq!(document.rotate_pages(&[page], 1).err().unwrap().kind, ErrorKind::NeedsPassword);
+    let reopened = Document::open(document.save(false).unwrap(), "").unwrap();
+    let last = reopened.fields().unwrap().into_iter().find(|field| field.name == "person.last").unwrap();
+    assert_eq!(last.value, tintenfisch::forms::FieldValue::Text("Lovelace".to_string()));
+}
+
+#[test]
+fn a_document_that_allows_comments_takes_notes_but_no_redaction_marks() {
+    let saved = restricted_form("", Permissions { print: true, annotate: true, ..NONE });
+    let mut document = Document::open(saved, "").unwrap();
+    let page = document.view(&library()).pages().unwrap()[0].id;
+    let style = MarkupStyle { color: [1.0, 0.0, 0.0], width: 1.0, author: String::new(), date: String::new() };
+    let note = Markup::Note { at: (20.0, 20.0), text: "note".to_string() };
+    document.add_markup(page, &note, &style, &library()).unwrap();
+    let mark = Markup::RedactArea { from: (10.0, 10.0), to: (60.0, 40.0) };
+    assert_eq!(document.add_markup(page, &mark, &style, &library()).err().unwrap().kind, ErrorKind::NeedsPassword);
+    fill_last_name(&mut document).unwrap();
+}
+
+#[test]
+fn opening_with_the_password_to_open_alone_keeps_the_restrictions_of_a_separate_owner_password() {
+    let saved = restricted_form("open sesame", Permissions { print: true, ..NONE });
+    let mut document = Document::open(saved.clone(), "open sesame").unwrap();
+    assert_eq!(fill_last_name(&mut document).err().unwrap().kind, ErrorKind::NeedsPassword);
+    let mut owner = Document::open(saved, "boss").unwrap();
+    assert!(owner.protection().withheld().is_empty());
+    fill_last_name(&mut owner).unwrap();
 }
 
 #[test]

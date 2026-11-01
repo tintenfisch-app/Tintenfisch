@@ -23,6 +23,7 @@ interface CaretState {
 interface EditingStore {
   enabled: boolean
   active: ActiveEdit | null
+  typingPage: string | null
   fonts: PageFont[]
   session(): EditSession | null
   setEnabled(enabled: boolean): void
@@ -60,6 +61,7 @@ const showNotice = (error: unknown) => useToastStore.getState().show('editing', 
 export const useEditingStore = create<EditingStore>()((set, get) => {
   let session: EditSession | null = null
   let drafted: EditSession | null = null
+  let typedEarly: Array<(session: EditSession) => EditSession> = []
   let drawn = ''
   let previewedChange = false
   let sequence = 0
@@ -111,10 +113,18 @@ export const useEditingStore = create<EditingStore>()((set, get) => {
     }
   }
 
-  const start = async (next: EditSession) => {
+  const awaitTyping = (pageId: string) => {
+    typedEarly = []
+    set({ typingPage: pageId })
+  }
+
+  const start = async (opened: EditSession) => {
+    const next = typedEarly.reduce((current, change) => change(current), opened)
+    typedEarly = []
+    if (get().typingPage !== next.pageId) set({ typingPage: next.pageId })
     session = next
-    drafted = next
-    drawn = drawingOf(next)
+    drafted = opened
+    drawn = drawingOf(opened)
     previewedChange = false
     await preview(next)
     await loadFonts(next.pageId)
@@ -130,8 +140,9 @@ export const useEditingStore = create<EditingStore>()((set, get) => {
     sequence++
     session = null
     drafted = null
+    typedEarly = []
     previewedChange = false
-    if (get().active) set({ active: null })
+    if (get().active || get().typingPage) set({ active: null, typingPage: null })
   }
 
   const redraw = (change: DocumentChange) => {
@@ -157,6 +168,7 @@ export const useEditingStore = create<EditingStore>()((set, get) => {
   return {
     enabled: false,
     active: null,
+    typingPage: null,
     fonts: [],
 
     session: () => session,
@@ -170,12 +182,14 @@ export const useEditingStore = create<EditingStore>()((set, get) => {
     async begin(pageId, x, y) {
       void get().commit()
       const beginning = ++sequence
+      awaitTyping(pageId)
       let hit = false
       await attempt(async () => {
         const point = await engine.request({ kind: 'hitText', pageId, x, y })
         hit = point !== null
         if (point && beginning === sequence) await open(pageId, point.line, (lineStart) => lineStart + point.offset, beginning)
       })
+      if (!session && beginning === sequence) close()
       return hit
     },
 
@@ -203,7 +217,10 @@ export const useEditingStore = create<EditingStore>()((set, get) => {
     },
 
     edit(change) {
-      if (!session) return
+      if (!session) {
+        if (get().typingPage) typedEarly.push(change)
+        return
+      }
       const next = change(session)
       if (next === session) return
       session = next
@@ -242,10 +259,7 @@ export const useEditingStore = create<EditingStore>()((set, get) => {
     },
 
     async undo() {
-      if (session?.changed) {
-        await get().cancel()
-        return
-      }
+      if (session?.changed) await get().commit()
       await revert('undo')
     },
 
@@ -256,7 +270,6 @@ export const useEditingStore = create<EditingStore>()((set, get) => {
 
     reset() {
       close()
-      set({ active: null })
       useToastStore.getState().clear('editing')
     },
   }

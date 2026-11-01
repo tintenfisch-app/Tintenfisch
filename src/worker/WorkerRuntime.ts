@@ -3,6 +3,7 @@ import { RequestScheduler } from '@/worker/RequestScheduler.ts'
 import type { Request, Response, WorkerMessage } from '@/types/protocol.ts'
 
 export interface RequestHandler {
+  prepare(request: Request): Promise<void>
   handle(request: Request): HostReply
 }
 
@@ -39,6 +40,7 @@ export class WorkerRuntime {
     const handler = await this.#handler
     const request = this.#scheduler.next()
     if (request) {
+      await handler.prepare(request)
       const { response, transfer } = handler.handle(request)
       this.#post(response, transfer)
     }

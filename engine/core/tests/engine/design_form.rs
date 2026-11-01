@@ -63,7 +63,7 @@ fn a_text_field_creates_the_form_shows_its_box_saves_and_undoes() {
     let field = designer.field(id);
     assert_eq!(
         (field.name.as_str(), &field.kind),
-        ("Name", &FieldKind::Text { multiline: false, password: false, comb: None })
+        ("Name", &FieldKind::Text { multiline: false, password: false, max_length: None, comb: false })
     );
     assert!(field.widgets[0].dict.get("AP").is_some(), "the new widget draws itself");
     assert_ne!(designer.render(), before);

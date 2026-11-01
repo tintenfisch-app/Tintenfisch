@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { CancelledError, engine } from '@/services/EngineClient.ts'
 import { onDocumentReplaced, useDocumentStore } from '@/stores/documentStore.ts'
+import { useProtectionStore } from '@/stores/protectionStore.ts'
 
 interface RedactionStore {
   confirming: boolean
@@ -18,7 +19,7 @@ export const useRedactionStore = create<RedactionStore>()((set, get) => ({
   notice: null,
 
   requestApply() {
-    if (!get().applying) set({ confirming: true, notice: null })
+    if (!get().applying && useProtectionStore.getState().permits('modifyContent')) set({ confirming: true, notice: null })
   },
 
   cancel() {

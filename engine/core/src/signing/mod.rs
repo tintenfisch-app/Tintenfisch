@@ -1,7 +1,9 @@
+mod certificate_validity;
 mod cms_check;
 mod cms_signature;
 mod cms_structures;
 mod digest_algorithm;
+mod identity_status;
 mod oids;
 mod password_decryption;
 mod pkcs12_archive;
@@ -14,9 +16,11 @@ mod signature_status;
 mod signing_details;
 mod signing_identity;
 
+pub use certificate_validity::CertificateValidity;
 pub(crate) use cms_check::CmsCheck;
 pub(crate) use cms_signature::CmsSignature;
 pub(crate) use digest_algorithm::DigestAlgorithm;
+pub use identity_status::IdentityStatus;
 pub use signature_mark::SignatureMark;
 pub(crate) use signature_placeholder::SignaturePlaceholder;
 pub use signature_report::SignatureReport;

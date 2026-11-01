@@ -1,3 +1,4 @@
+mod arabic_forms;
 mod fill_color;
 mod glyph_origin;
 mod grapheme;
@@ -10,6 +11,7 @@ mod text_layout;
 mod text_machine;
 mod text_state;
 
+pub use arabic_forms::arabic_base_letters;
 pub use fill_color::FillColor;
 pub use glyph_origin::GlyphOrigin;
 pub use grapheme::split_graphemes;

@@ -1,3 +1,4 @@
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::error::Result;
 use crate::page_images::{ImageEdit, ImageFile, ImageFrame, PlacedImage};
@@ -12,6 +13,7 @@ impl Document {
     }
 
     pub fn insert_image(&mut self, page: PageId, data: &[u8], center: (f64, f64)) -> Result<usize> {
+        self.require(EditRight::ModifyContent)?;
         let page = self.page(page)?;
         let file = ImageFile::read(data)?;
         let shown = page.display_size();
@@ -25,16 +27,19 @@ impl Document {
     }
 
     pub fn move_image(&mut self, page: PageId, index: usize, frame: &ImageFrame) -> Result<()> {
+        self.require(EditRight::ModifyContent)?;
         let edit = ImageEdit::moved(&self.store, &self.page(page)?, index, frame)?;
         self.store.transact("Move image", "", |transaction| edit.apply(transaction))
     }
 
     pub fn replace_image(&mut self, page: PageId, index: usize, data: &[u8]) -> Result<()> {
+        self.require(EditRight::ModifyContent)?;
         let edit = ImageEdit::replaced(&self.store, &self.page(page)?, index, ImageFile::read(data)?)?;
         self.store.transact("Replace image", "", |transaction| edit.apply(transaction))
     }
 
     pub fn delete_image(&mut self, page: PageId, index: usize) -> Result<()> {
+        self.require(EditRight::ModifyContent)?;
         let edit = ImageEdit::deleted(&self.store, &self.page(page)?, index)?;
         self.store.transact("Delete image", "", |transaction| edit.apply(transaction))
     }

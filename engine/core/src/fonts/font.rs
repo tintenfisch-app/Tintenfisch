@@ -102,10 +102,14 @@ impl Font {
                 while !rest.is_empty() {
                     let (code, length) = font.next_code(rest);
                     let cid = font.cid(code, length);
+                    let character = match font.embedded_program() {
+                        Some(_) => None,
+                        None => font.unicode(code).or_else(|| self.mapped_character(code)),
+                    };
                     glyphs.push(ShownGlyph {
                         code,
                         byte_length: length,
-                        glyph: font.glyph(cid).map_or(Glyph::Missing, Glyph::Outline),
+                        glyph: font.glyph(cid, character).map_or(Glyph::Missing, Glyph::Outline),
                         width: font.width(cid),
                         is_word_space: length == 1 && code == 32,
                     });
@@ -123,10 +127,15 @@ impl Font {
         let encoding = match &self.kind {
             FontKind::Simple(font) => font.encoding(),
             FontKind::Type3(font) => font.encoding(),
-            FontKind::Cid(_) => return None,
+            FontKind::Cid(font) => return font.unicode(code).map(String::from),
         };
         let name = encoding.name(u8::try_from(code).ok()?)?;
         unicode_of(name).map(String::from)
+    }
+
+    fn mapped_character(&self, code: u32) -> Option<char> {
+        let mut characters = self.to_unicode.as_ref()?.text(code)?.chars();
+        characters.next().filter(|_| characters.next().is_none())
     }
 
     pub fn encode(&self, character: char) -> Option<(u32, usize)> {
@@ -137,7 +146,7 @@ impl Font {
                 FontKind::Simple(_) | FontKind::Type3(_) => (0..=255u32)
                     .find(|&code| self.unicode(code).as_deref() == Some(text.as_str()))
                     .map(|code| (code, 1)),
-                FontKind::Cid(font) => font.identity_code_for(character),
+                FontKind::Cid(font) => font.code_for(character),
             },
         }?;
         self.shows_glyph(candidate, character).then_some(candidate)
@@ -161,6 +170,13 @@ impl Font {
             FontKind::Simple(font) => font.outline(glyph),
             FontKind::Cid(font) => font.outline(glyph),
             FontKind::Type3(_) => None,
+        }
+    }
+
+    pub fn stretch(&self, glyph: &ShownGlyph) -> f64 {
+        match &self.kind {
+            FontKind::Simple(font) => u8::try_from(glyph.code).map_or(1.0, |code| font.stretch(code)),
+            _ => 1.0,
         }
     }
 

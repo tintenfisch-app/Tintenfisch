@@ -4,7 +4,7 @@ use support::fixtures;
 use support::rendering::library;
 use tintenfisch::document::{Document, FieldInput};
 use tintenfisch::fonts::FontLibrary;
-use tintenfisch::forms::{Field, FieldKind, FieldValue};
+use tintenfisch::forms::{Field, FieldKind, FieldValue, XfaContent};
 use tintenfisch::pages::PageId;
 use tintenfisch::syntax::{Name, ObjId, Object};
 
@@ -77,7 +77,7 @@ fn the_field_tree_reads_with_inherited_attributes_and_full_names() {
     assert_eq!(names, ["person.first", "person.last", "notes", "zip", "agree", "color", "language", "fruits", "id"]);
     assert_eq!(form.field("person.first").value, FieldValue::Text("Ada".to_string()));
     assert!(matches!(form.field("notes").kind, FieldKind::Text { multiline: true, .. }));
-    assert!(matches!(form.field("zip").kind, FieldKind::Text { comb: Some(5), .. }));
+    assert!(matches!(form.field("zip").kind, FieldKind::Text { comb: true, max_length: Some(5), .. }));
     assert_eq!(form.field("agree").value, FieldValue::State(None));
     assert_eq!(form.field("color").value, FieldValue::State(Some(Name::from("Red"))));
     assert_eq!(form.field("color").widgets.len(), 2);
@@ -133,6 +133,30 @@ fn long_text_wraps_in_a_multiline_field_and_a_comb_takes_one_character_per_cell(
     form.fill("zip", FieldInput::Text("1011599".to_string()));
     assert_eq!(form.field("zip").value, FieldValue::Text("10115".to_string()), "the comb keeps its length");
     assert_eq!(form.appearance_text(zip).matches(" Tj").count(), 5);
+}
+
+#[test]
+fn a_text_field_keeps_to_its_own_or_its_parents_max_length_through_saving() {
+    let mut form = Form::open(fixtures::limited_form("", ""));
+    assert!(matches!(form.field("code.short").kind, FieldKind::Text { max_length: Some(5), comb: false, .. }));
+    assert!(matches!(form.field("code.long").kind, FieldKind::Text { max_length: Some(8), .. }));
+    form.fill("code.short", FieldInput::Text("12345678".to_string()));
+    form.fill("code.long", FieldInput::Text("1234567890".to_string()));
+    let reopened = Form::open(form.document.save(false).unwrap());
+    assert_eq!(reopened.field("code.short").value, FieldValue::Text("12345".to_string()));
+    assert_eq!(reopened.field("code.long").value, FieldValue::Text("12345678".to_string()));
+}
+
+#[test]
+fn a_form_tells_whether_it_carries_xfa_and_whether_only_xfa_can_draw_it() {
+    let xfa =
+        |catalog: &str, form: &str| Form::open(fixtures::limited_form(catalog, form)).document.xfa_content().unwrap();
+    assert_eq!(xfa("", ""), XfaContent::Absent);
+    assert_eq!(xfa("", "/XFA 7 0 R"), XfaContent::Hybrid);
+    assert_eq!(xfa("", "/XFA [(template) 7 0 R]"), XfaContent::Hybrid);
+    assert_eq!(xfa("/NeedsRendering true", "/XFA 7 0 R"), XfaContent::Dynamic);
+    assert_eq!(xfa("/NeedsRendering true", ""), XfaContent::Absent);
+    assert_eq!(Form::open(fixtures::fillable_form()).document.xfa_content().unwrap(), XfaContent::Absent);
 }
 
 #[test]

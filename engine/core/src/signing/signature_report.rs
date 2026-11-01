@@ -1,4 +1,4 @@
-use crate::signing::SignatureStatus;
+use crate::signing::{IdentityStatus, SignatureStatus};
 use crate::syntax::ObjId;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -9,5 +9,6 @@ pub struct SignatureReport {
     pub signed_at: String,
     pub reason: String,
     pub status: SignatureStatus,
+    pub identity: Option<IdentityStatus>,
     pub changed_after: bool,
 }

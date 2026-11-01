@@ -11,6 +11,7 @@ use crate::syntax::{Dict, Name, ObjId, Object};
 use crate::text::text_glyph::to_line_space;
 use crate::text::{
     BLOCK_TAG, FillColor, GlyphOrigin, RecordedGlyph, ShowItem, ShowRecord, TextGlyph, TextMachine, TextState,
+    arabic_base_letters,
 };
 
 const MAX_NESTING: usize = 12;
@@ -237,7 +238,7 @@ fn text_of(font: &Rc<Font>, code: u32, is_word_space: bool) -> String {
     let text = font.unicode(code).unwrap_or_else(|| if is_word_space { " ".to_string() } else { UNMAPPED.to_string() });
     let mut expanded = String::with_capacity(text.len());
     for character in text.chars() {
-        match ligature_letters(character) {
+        match ligature_letters(character).or_else(|| arabic_base_letters(character)) {
             Some(letters) => expanded.push_str(letters),
             None => expanded.push(character),
         }

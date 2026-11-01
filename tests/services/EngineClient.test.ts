@@ -8,7 +8,7 @@ function connected(port: FakeEnginePort): EngineClient {
   return client
 }
 
-const opened = { version: '1.7', byteLength: 1, objectCount: 5, pageCount: 1, repaired: true }
+const opened = { version: '1.7', byteLength: 1, objectCount: 5, pageCount: 1, repaired: true, xfa: 'absent' }
 
 describe('EngineClient', () => {
   it('matches responses to requests by id, in any order', async () => {

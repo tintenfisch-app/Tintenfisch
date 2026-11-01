@@ -1,7 +1,8 @@
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::fonts::FontLibrary;
-use crate::forms::{Field, FieldKind, FieldTree, FieldValue, on_state, refresh_appearances};
+use crate::forms::{Field, FieldKind, FieldTree, FieldValue, XfaContent, on_state, refresh_appearances};
 use crate::pages::PageId;
 use crate::syntax::{Name, ObjId, Object, encode_text};
 
@@ -18,7 +19,12 @@ impl Document {
         FieldTree::new(&self.store).fields()
     }
 
+    pub fn xfa_content(&self) -> Result<XfaContent> {
+        XfaContent::of(&self.store)
+    }
+
     pub fn set_field(&mut self, field: ObjId, input: FieldInput, library: &FontLibrary) -> Result<Vec<PageId>> {
+        self.require(EditRight::FillForms)?;
         let field = self
             .fields()?
             .into_iter()
@@ -47,8 +53,8 @@ impl Document {
 
 fn value_for(field: &Field, input: &FieldInput) -> Result<FieldValue> {
     Ok(match (&field.kind, input) {
-        (FieldKind::Text { comb, .. }, FieldInput::Text(text)) => {
-            FieldValue::Text(comb.map_or(text.clone(), |cells| text.chars().take(cells).collect()))
+        (FieldKind::Text { max_length, .. }, FieldInput::Text(text)) => {
+            FieldValue::Text(max_length.map_or(text.clone(), |length| text.chars().take(length).collect()))
         }
         (FieldKind::Checkbox, FieldInput::Checked(checked)) => {
             FieldValue::State(field.widgets.first().map(|widget| on_state(field, widget)).filter(|_| *checked))

@@ -1,5 +1,10 @@
+use std::io::Write;
 use std::rc::Rc;
 
+use flate2::Compression;
+use flate2::write::ZlibEncoder;
+
+use crate::error::{Error, Result};
 use crate::image::{DecodedImage, JpegHeader};
 use crate::store::Transaction;
 use crate::syntax::{Dict, Name, ObjId, Object, Stream};
@@ -10,19 +15,28 @@ pub struct ImageStreams {
 }
 
 impl ImageStreams {
-    pub fn rgb(decoded: &DecodedImage) -> ImageStreams {
-        let rgb: Vec<u8> = decoded.rgba.chunks(4).flat_map(|pixel| [pixel[0], pixel[1], pixel[2]]).collect();
-        let alpha: Vec<u8> = decoded.rgba.chunks(4).map(|pixel| pixel[3]).collect();
-        let samples =
-            |space: &str| vec![("ColorSpace", Object::Name(Name::from(space))), ("BitsPerComponent", Object::Int(8))];
-        let soft_mask = alpha.iter().any(|value| *value < 255).then(|| Stream {
-            dict: image_dict(decoded.width, decoded.height, samples("DeviceGray")),
-            raw: Rc::from(alpha),
-        });
-        ImageStreams {
-            image: Stream { dict: image_dict(decoded.width, decoded.height, samples("DeviceRGB")), raw: Rc::from(rgb) },
+    pub fn rgb(decoded: &DecodedImage) -> Result<ImageStreams> {
+        let rows = || decoded.rgba.as_chunks::<4>().0.chunks(decoded.width.max(1));
+        let samples = |space: &str| {
+            vec![
+                ("ColorSpace", Object::Name(Name::from(space))),
+                ("BitsPerComponent", Object::Int(8)),
+                ("Filter", Object::Name(Name::from("FlateDecode"))),
+            ]
+        };
+        let color =
+            deflated(rows().map(|row| row.iter().flat_map(|[red, green, blue, _]| [*red, *green, *blue]).collect()))?;
+        let translucent = decoded.rgba.as_chunks::<4>().0.iter().any(|pixel| pixel[3] < 255);
+        let soft_mask = if translucent {
+            let alpha = deflated(rows().map(|row| row.iter().map(|pixel| pixel[3]).collect()))?;
+            Some(Stream { dict: image_dict(decoded.width, decoded.height, samples("DeviceGray")), raw: alpha })
+        } else {
+            None
+        };
+        Ok(ImageStreams {
+            image: Stream { dict: image_dict(decoded.width, decoded.height, samples("DeviceRGB")), raw: color },
             soft_mask,
-        }
+        })
     }
 
     pub fn stencil(decoded: &DecodedImage) -> ImageStreams {
@@ -69,6 +83,15 @@ impl ImageStreams {
         }
         transaction.allocate(Object::Stream(image))
     }
+}
+
+fn deflated(rows: impl Iterator<Item = Vec<u8>>) -> Result<Rc<[u8]>> {
+    let failed = |error: std::io::Error| Error::new(format!("image compression: {error}"));
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    for row in rows {
+        encoder.write_all(&row).map_err(failed)?;
+    }
+    Ok(Rc::from(encoder.finish().map_err(failed)?))
 }
 
 fn image_dict(width: usize, height: usize, extra: Vec<(&str, Object)>) -> Dict {

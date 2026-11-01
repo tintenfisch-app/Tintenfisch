@@ -2,6 +2,7 @@ mod support;
 
 mod add_text;
 mod annotate;
+mod cjk_text;
 mod design_form;
 mod edit_form;
 mod edit_fuzz;
@@ -25,4 +26,5 @@ mod scan_images;
 mod sign_digitally;
 mod sign_visually;
 mod store_history;
+mod substitute_fonts;
 mod text_layout;

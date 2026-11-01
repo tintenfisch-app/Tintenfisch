@@ -41,6 +41,6 @@ impl<'s> ImageEraser<'s> {
         if !erased {
             return Ok(None);
         }
-        Ok(Some(if description.is_stencil { ImageStreams::stencil(&decoded) } else { ImageStreams::rgb(&decoded) }))
+        Ok(Some(if description.is_stencil { ImageStreams::stencil(&decoded) } else { ImageStreams::rgb(&decoded)? }))
     }
 }

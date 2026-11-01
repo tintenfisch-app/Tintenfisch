@@ -10,7 +10,7 @@ import { Input, Select } from '@/components/ui/Field.tsx'
 
 export function SigningDialog() {
   const digitalSignatures = useDigitalSignatureStore()
-  const { dialogOpen, signing, notice, reports } = digitalSignatures
+  const { dialogOpen, signing, notice, warning, reports } = digitalSignatures
   const { fields } = useFormsStore()
   const [fieldId, setFieldId] = useState('')
   const [certificate, setCertificate] = useState<File | null>(null)
@@ -26,7 +26,7 @@ export function SigningDialog() {
     event.preventDefault()
     if (!certificate || !chosen) return
     const bytes = new Uint8Array(await certificate.arrayBuffer())
-    const result = await digitalSignatures.sign({ fieldId: chosen, certificate: bytes, password, reason, location })
+    const result = await digitalSignatures.sign({ fieldId: chosen, certificate: bytes, password, reason, location }, warning !== null)
     if (!result) return
     await FileDownload.offer(result.name, result.bytes)
     setPassword('')
@@ -48,10 +48,25 @@ export function SigningDialog() {
               </Select>
             </DialogField>
             <DialogField label="Certificate file (.p12, .pfx)">
-              <Input type="file" accept=".p12,.pfx,application/x-pkcs12" onChange={(event) => setCertificate(event.target.files?.[0] ?? null)} />
+              <Input
+                type="file"
+                accept=".p12,.pfx,application/x-pkcs12"
+                onChange={(event) => {
+                  setCertificate(event.target.files?.[0] ?? null)
+                  digitalSignatures.dismissWarning()
+                }}
+              />
             </DialogField>
             <DialogField label="Password">
-              <Input type="password" autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
+              <Input
+                type="password"
+                autoComplete="off"
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value)
+                  digitalSignatures.dismissWarning()
+                }}
+              />
             </DialogField>
             <DialogField label="Reason">
               <Input value={reason} onChange={(event) => setReason(event.target.value)} />
@@ -62,15 +77,14 @@ export function SigningDialog() {
             <p className="text-ink-body">Signing saves every change so far and {isTauri() ? 'asks where to save' : 'downloads'} the signed file.</p>
           </>
         )}
-        {notice && (
-          <Notice>{notice}</Notice>
-        )}
+        {warning && <Notice role="alert">{warning}</Notice>}
+        {notice && <Notice>{notice}</Notice>}
         <DialogActions>
           <Button onClick={() => digitalSignatures.closeDialog()} disabled={signing}>
             Cancel
           </Button>
           <Button type="submit" look="primary" disabled={signing || !certificate || !chosen}>
-            {signing ? 'Signing' : 'Sign'}
+            {signing ? 'Signing' : warning ? 'Sign anyway' : 'Sign'}
           </Button>
         </DialogActions>
     </Dialog>

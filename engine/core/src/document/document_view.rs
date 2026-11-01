@@ -2,10 +2,11 @@ use std::rc::Rc;
 
 use crate::document::{DocumentCaches, PageFont, PageSummary};
 use crate::error::{Error, Result};
-use crate::fonts::{FontLibrary, FontProgram};
-use crate::pages::{Page, PageId, PageTree};
+use crate::fonts::{CidFont, FontLibrary, FontProgram};
+use crate::pages::{Page, PageId, PageTree, drawn_forms};
 use crate::render::{PageRenderer, Raster, RenderContext, Tile};
 use crate::store::ObjectStore;
+use crate::syntax::{Dict, Object};
 use crate::text::{TextExtractor, TextGlyph, TextLayout};
 
 #[derive(Clone, Copy)]
@@ -76,6 +77,34 @@ impl<'a> DocumentView<'a> {
                 })
             })
             .collect())
+    }
+
+    pub fn needs_cjk_substitute(&self, id: PageId) -> Result<bool> {
+        let page = self.page(id)?;
+        let mut resources = vec![page.resources.clone()];
+        for form in drawn_forms(self.store, &page.resources) {
+            let object = self.store.object(form)?;
+            if let Some(own) = object.as_stream().and_then(|stream| stream.dict.get("Resources")) {
+                resources.push(self.store.resolve(own)?.as_dict().cloned().unwrap_or_default());
+            }
+        }
+        Ok(resources.iter().any(|resources| self.uses_cjk_substitute(resources)))
+    }
+
+    fn uses_cjk_substitute(&self, resources: &Dict) -> bool {
+        let Some(fonts) = resources.get("Font").and_then(|fonts| self.store.resolve(fonts).ok()) else {
+            return false;
+        };
+        fonts.as_dict().is_some_and(|fonts| {
+            fonts.iter().any(|(_, entry)| {
+                self.store
+                    .resolve(entry)
+                    .ok()
+                    .as_ref()
+                    .and_then(Object::as_dict)
+                    .is_some_and(|font| CidFont::needs_cjk_substitute(font, self.store))
+            })
+        })
     }
 
     pub fn text_layout(&self, id: PageId) -> Result<Rc<TextLayout>> {

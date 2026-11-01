@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { TOOL_CATALOG } from '@/components/tools/toolCatalog.ts'
 import { Icon, type IconName } from '@/components/ui/Icon.tsx'
 import { PanelItem } from '@/components/ui/PanelItem.tsx'
+import { useToolPermission, usePermission } from '@/hooks/usePermission.ts'
 import { SidePanel } from '@/components/ui/SidePanel.tsx'
 import { useDigitalSignatureStore } from '@/stores/digitalSignatureStore.ts'
 import { usePagesStore } from '@/stores/pagesStore.ts'
@@ -13,6 +14,7 @@ import { useWorkspaceStore, type Tool } from '@/stores/workspaceStore.ts'
 interface Action {
   label: string
   icon: IconName
+  organizes?: boolean
   run: () => void
 }
 
@@ -32,7 +34,7 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
   {
     title: 'Organize pages',
     entries: [
-      { label: 'Insert blank page', icon: 'file-add', run: () => void usePagesStore.getState().insertBlank() },
+      { label: 'Insert blank page', icon: 'file-add', organizes: true, run: () => void usePagesStore.getState().insertBlank() },
     ],
   },
   { title: 'Prepare form', entries: ['form'] },
@@ -58,6 +60,8 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
 export function AllToolsPanel() {
   const { tool, choose: chooseTool, closeSheet } = useWorkspaceStore()
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const usable = useToolPermission()
+  const organizing = usePermission('assemble')
 
   function choose(entry: Entry) {
     if (typeof entry === 'string') chooseTool(entry)
@@ -82,9 +86,9 @@ export function AllToolsPanel() {
           {!collapsed.has(title) &&
             entries.map((entry) =>
               typeof entry === 'string' ? (
-                <PanelItem key={entry} icon={TOOL_CATALOG[entry].icon} label={TOOL_CATALOG[entry].label} chosen={entry === tool} onClick={() => choose(entry)} />
+                <PanelItem key={entry} icon={TOOL_CATALOG[entry].icon} label={TOOL_CATALOG[entry].label} chosen={entry === tool} disabled={!usable(entry)} onClick={() => choose(entry)} />
               ) : (
-                <PanelItem key={entry.label} icon={entry.icon} label={entry.label} onClick={() => choose(entry)} />
+                <PanelItem key={entry.label} icon={entry.icon} label={entry.label} disabled={entry.organizes && !organizing} onClick={() => choose(entry)} />
               ),
             )}
         </section>

@@ -4,12 +4,14 @@ import { MenuButton, MenuItem } from '@/components/ui/Menu.tsx'
 import { useDigitalSignatureStore } from '@/stores/digitalSignatureStore.ts'
 import { useSignatureStore } from '@/stores/signatureStore.ts'
 import { useWorkspaceStore } from '@/stores/workspaceStore.ts'
+import { useToolPermission } from '@/hooks/usePermission.ts'
 
 export function SignMenuButton() {
   const workspace = useWorkspaceStore()
   const signing = useSignatureStore()
   const digitalSignatures = useDigitalSignatureStore()
   const { tool } = workspace
+  const usable = useToolPermission()
   const active = tool === 'sign'
   return (
     <MenuButton icon="pen-brush" label="Sign" tooltip="right" look={active ? 'selected' : null} opens="right">
@@ -17,6 +19,7 @@ export function SignMenuButton() {
         <>
           <MenuItem
             chosen={active}
+            disabled={!usable('sign')}
             onClick={() => {
               workspace.choose('sign')
               close()

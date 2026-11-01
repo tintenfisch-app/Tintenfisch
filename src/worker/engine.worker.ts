@@ -6,16 +6,21 @@ import type { WorkerMessage } from '@/types/protocol.ts'
 
 const scope = self as unknown as DedicatedWorkerGlobalScope
 
+async function fetchFont(fileName: string): Promise<Uint8Array | undefined> {
+  const response = await fetch(`${import.meta.env.BASE_URL}fonts/${fileName}`)
+  return response.ok ? new Uint8Array(await response.arrayBuffer()) : undefined
+}
+
 async function startEngine(): Promise<EngineHost> {
   await initializeWasm({ module_or_path: wasmUrl })
   const engine = new Engine()
   await Promise.all(
     Engine.fallbackFontFiles().map(async (fileName) => {
-      const response = await fetch(`${import.meta.env.BASE_URL}fonts/${fileName}`)
-      if (response.ok) engine.registerFont(fileName, new Uint8Array(await response.arrayBuffer()))
+      const bytes = await fetchFont(fileName)
+      if (bytes) engine.registerFont(fileName, bytes)
     }),
   )
-  return new EngineHost(engine)
+  return new EngineHost(engine, fetchFont)
 }
 
 const channel = new MessageChannel()

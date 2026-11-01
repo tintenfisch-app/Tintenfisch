@@ -6,9 +6,10 @@ use crate::save::Encryption;
 use crate::save::document_id::DocumentId;
 use crate::save::object_output::for_output;
 use crate::store::ObjectStore;
-use crate::syntax::{Dict, ObjId, Object, Serializer, Stream};
+use crate::syntax::{Dict, Name, ObjId, Object, Serializer, Stream};
 
 const SOURCE: Encryption = Encryption::Source;
+const SEALED_VERSION: (u8, u8) = (2, 0);
 
 pub struct FullRewriter<'a> {
     store: &'a ObjectStore,
@@ -36,7 +37,11 @@ impl<'a> FullRewriter<'a> {
         let numbers: HashMap<ObjId, u32> =
             order.iter().enumerate().map(|(index, id)| (*id, index as u32 + 1)).collect();
         let header = self.store.source().header();
-        let mut out = format!("%PDF-{}.{}\n", header.major, header.minor).into_bytes();
+        let sealed = matches!(self.encryption, Encryption::Sealed { .. });
+        let source_version = (header.major, header.minor);
+        let (major, minor) = if sealed { source_version.max(SEALED_VERSION) } else { source_version };
+        let catalog = source_trailer.get("Root").and_then(Object::as_reference);
+        let mut out = format!("%PDF-{major}.{minor}\n").into_bytes();
         out.extend_from_slice(b"%\xe2\xe3\xcf\xd3\n");
         let security = match self.encryption {
             Encryption::Source => self.store.source().security(),
@@ -45,10 +50,13 @@ impl<'a> FullRewriter<'a> {
         };
         let mut offsets = Vec::with_capacity(order.len() + 1);
         for id in &order {
-            let object = self.store.object(*id)?;
+            let mut object = renumber(&*self.store.object(*id)?, &numbers);
+            if sealed && catalog == Some(*id) {
+                raise_catalog_version(&mut object, SEALED_VERSION);
+            }
             offsets.push(out.len());
             let written_as = ObjId::new(numbers[id], 0);
-            let output = for_output(&renumber(&object, &numbers), written_as, *id, security);
+            let output = for_output(&object, written_as, *id, security);
             Serializer::new(&mut out).indirect(written_as, &output);
         }
         let mut trailer = Dict::new();
@@ -100,6 +108,18 @@ impl<'a> FullRewriter<'a> {
             }
         }
         Ok(order)
+    }
+}
+
+fn raise_catalog_version(catalog: &mut Object, (major, minor): (u8, u8)) {
+    let Object::Dict(dict) = catalog else { return };
+    let Some(name) = dict.name("Version") else { return };
+    let declared = std::str::from_utf8(name.as_bytes()).ok().and_then(|text| {
+        let (declared_major, declared_minor) = text.split_once('.')?;
+        Some((declared_major.parse::<u8>().ok()?, declared_minor.parse::<u8>().ok()?))
+    });
+    if declared.is_none_or(|declared| declared < (major, minor)) {
+        dict.insert("Version", Object::Name(Name::from(format!("{major}.{minor}").as_str())));
     }
 }
 

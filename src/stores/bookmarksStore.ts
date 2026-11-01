@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { CancelledError, engine } from '@/services/EngineClient.ts'
 import { onDocumentChanged, onDocumentReplaced } from '@/stores/documentStore.ts'
+import { useProtectionStore } from '@/stores/protectionStore.ts'
 import { useViewportStore } from '@/stores/viewportStore.ts'
 import type { Bookmark, Command } from '@/types/protocol.ts'
 
@@ -61,11 +62,15 @@ export const useBookmarksStore = create<BookmarksStore>()((set, get) => {
     }
   }
 
-  const change = (command: Command) =>
-    attempt(async () => {
+  const organizing = () => useProtectionStore.getState().permits('assemble')
+
+  const change = async (command: Command) => {
+    if (!organizing()) return
+    await attempt(async () => {
       await engine.request(command)
       await get().reload()
     })
+  }
 
   return {
     items: [],
@@ -111,6 +116,7 @@ export const useBookmarksStore = create<BookmarksStore>()((set, get) => {
       const { items, selected } = get()
       const current = selected ? placeIn(items, selected) : null
       const place = current ? { parent: current.parent, index: current.index + 1 } : { parent: null, index: items.length }
+      if (!organizing()) return
       await attempt(async () => {
         const id = await engine.request({ kind: 'addBookmark', ...place, title: UNTITLED, target: useViewportStore.getState().currentView() })
         await get().reload()

@@ -48,8 +48,8 @@ impl Interpreter<'_> {
                     return;
                 }
                 let Some(outline) = font.outline(id) else { return };
-                let Some(path) = (*outline).clone().transform(self.text.glyph_to_user(&self.state.text).to_skia())
-                else {
+                let to_user = Matrix::scale(font.stretch(glyph), 1.0).then(&self.text.glyph_to_user(&self.state.text));
+                let Some(path) = (*outline).clone().transform(to_user.to_skia()) else {
                     return;
                 };
                 if matches!(mode, 0 | 2 | 4 | 6) {

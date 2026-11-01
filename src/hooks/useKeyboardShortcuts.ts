@@ -19,6 +19,14 @@ function typesText(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement && !NOT_TYPED.includes(target.type)
 }
 
+function finishesEdit(target: EventTarget | null): boolean {
+  const editing = useEditingStore.getState()
+  if (!editing.session() || (target instanceof HTMLElement && 'editInput' in target.dataset)) return false
+  if (isEditable(target) && !(target instanceof Element && target.closest('[data-keeps-edit]'))) return false
+  void editing.commit()
+  return true
+}
+
 function removeOrDeselect(event: KeyboardEvent, remove: () => Promise<void>, deselect: () => void) {
   if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault()
@@ -31,25 +39,38 @@ function removeOrDeselect(event: KeyboardEvent, remove: () => Promise<void>, des
 function press(event: KeyboardEvent) {
   const command = event.metaKey || event.ctrlKey
   const key = event.key.toLowerCase()
-  if (command && key === 'z' && !typesText(event.target)) {
+  const reverting = command && (key === 'z' || (key === 'y' && !event.shiftKey))
+  if (reverting && !typesText(event.target)) {
     event.preventDefault()
     const editing = useEditingStore.getState()
-    void (event.shiftKey ? editing.redo() : editing.undo())
+    void (key === 'y' || event.shiftKey ? editing.redo() : editing.undo())
   }
   if (command && key === 'p') {
     event.preventDefault()
     usePrintStore.getState().openDialog()
   }
+  if (event.key === 'Escape' && finishesEdit(event.target)) return
   if (isEditable(event.target)) return
-  if (event.key === 'Escape') useSelectionStore.getState().clear()
-  const { tool } = useWorkspaceStore.getState()
   const comments = useCommentsStore.getState()
-  if (comments.selected) removeOrDeselect(event, comments.removeSelected, () => comments.select(null))
+  if (comments.placing && !command && (event.key.length === 1 || event.key === 'Backspace')) {
+    event.preventDefault()
+    comments.keep(event.key)
+    return
+  }
+  const workspace = useWorkspaceStore.getState()
+  const { tool } = workspace
+  const selection = useSelectionStore.getState()
   const forms = useFormsStore.getState()
-  if (tool === 'form' && forms.selected) removeOrDeselect(event, forms.deleteSelected, () => forms.select(null))
   const images = useImagesStore.getState()
-  if (images.selected) removeOrDeselect(event, images.removeSelected, () => images.select(null))
   const links = useLinksStore.getState()
+  const holding = selection.selection || comments.selected || (tool === 'form' && forms.selected) || images.selected || (tool === 'link' && (links.selected || links.draft))
+  if (event.key === 'Escape') {
+    selection.clear()
+    if (!holding) workspace.leaveTool()
+  }
+  if (comments.selected) removeOrDeselect(event, comments.removeSelected, () => comments.select(null))
+  if (tool === 'form' && forms.selected) removeOrDeselect(event, forms.deleteSelected, () => forms.select(null))
+  if (images.selected) removeOrDeselect(event, images.removeSelected, () => images.select(null))
   if (tool === 'link' && links.selected && !links.draft) removeOrDeselect(event, links.removeSelected, () => links.select(null))
 }
 

@@ -13,6 +13,9 @@ function zoneOf(event: DragEvent<HTMLElement>): Zone {
   return share < 0.25 ? 'before' : share > 0.75 ? 'after' : 'inside'
 }
 
+const INDENT = 14
+
+const DEEPEST_INDENT = 8
 
 const DROP_ZONES = {
   before: 'shadow-[inset_0_2px_0_var(--color-selection)]',
@@ -50,7 +53,7 @@ export function BookmarkRow({ bookmark, parent, index, depth }: { bookmark: Book
     <li role="treeitem" aria-expanded={hasChildren ? !collapsed : undefined} aria-selected={selected === bookmark.id}>
       <div
         className={`flex min-h-8 items-center gap-0.5 rounded ${selected === bookmark.id ? 'bg-selection-fill' : 'hover:bg-hover'} ${zone ? DROP_ZONES[zone] : ''}`}
-        style={{ paddingLeft: 4 + depth * 14 }}
+        style={{ paddingLeft: 4 + Math.min(depth, DEEPEST_INDENT) * INDENT }}
         draggable={renaming !== bookmark.id}
         onDragStart={(event) => {
           event.dataTransfer.setData(BOOKMARK_TYPE, bookmark.id)
@@ -82,7 +85,7 @@ export function BookmarkRow({ bookmark, parent, index, depth }: { bookmark: Book
             onKeyDown={typed}
           />
         ) : (
-          <button type="button" className="flex-1 cursor-pointer truncate p-1 text-left text-ink-strong" onClick={() => bookmarks.follow(bookmark)} onDoubleClick={() => bookmarks.startRenaming(bookmark.id)}>
+          <button type="button" className="min-w-0 flex-1 cursor-pointer truncate p-1 text-left text-ink-strong" title={bookmark.title || undefined} onClick={() => bookmarks.follow(bookmark)} onDoubleClick={() => bookmarks.startRenaming(bookmark.id)}>
             {bookmark.title || 'Untitled'}
           </button>
         )}

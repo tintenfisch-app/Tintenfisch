@@ -1,3 +1,4 @@
+use crate::crypt::EditRight;
 use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::fonts::FontLibrary;
@@ -6,6 +7,7 @@ use crate::redact::{Redactor, neutralize_outline_titles};
 
 impl Document {
     pub fn apply_redactions(&mut self, library: &FontLibrary) -> Result<Vec<PageId>> {
+        self.require(EditRight::ModifyContent)?;
         let redactor = Redactor::new(&self.store, &self.caches.fonts, library);
         let mut planned = Vec::new();
         for page in PageTree::new(&self.store).pages()? {

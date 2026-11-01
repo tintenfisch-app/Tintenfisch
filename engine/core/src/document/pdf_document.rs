@@ -1,3 +1,4 @@
+use crate::crypt::EditRight;
 use crate::document::{DocumentCaches, DocumentView};
 use crate::edit::{EditPlan, NewParagraph, ParagraphEdit, ParagraphPlanner, ParagraphText};
 use crate::error::Result;
@@ -19,6 +20,7 @@ impl Document {
     pub fn open(bytes: Vec<u8>, password: &str) -> Result<Document> {
         let mut store = ObjectStore::new(SourceFile::open_with_password(bytes, password)?);
         PageTree::separate_shared_pages(&mut store)?;
+        PageTree::break_cycles(&mut store)?;
         Ok(Document {
             store,
             caches: DocumentCaches::default(),
@@ -38,6 +40,10 @@ impl Document {
 
     pub fn view<'a>(&'a self, library: &'a FontLibrary) -> DocumentView<'a> {
         DocumentView { store: &self.store, caches: &self.caches, library }
+    }
+
+    pub fn forget_fonts(&self) {
+        self.caches.fonts.clear();
     }
 
     pub fn save(&self, optimize: bool) -> Result<Vec<u8>> {
@@ -63,6 +69,7 @@ impl Document {
         if plan.is_empty() {
             return Ok(());
         }
+        self.require(EditRight::ModifyContent)?;
         self.store.transact("Edit text", ui_state, |transaction| plan.apply(transaction))
     }
 

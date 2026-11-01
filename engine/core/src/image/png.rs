@@ -7,7 +7,9 @@ use crate::image::DecodedImage;
 
 const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 const MAX_PIXELS: usize = 1 << 26;
-const ADAM7: [(usize, usize, usize, usize); 7] =
+type Pass = (usize, usize, usize, usize);
+
+const ADAM7: [Pass; 7] =
     [(0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)];
 
 struct Header {
@@ -39,6 +41,16 @@ struct Colors {
     transparent: Option<Vec<u16>>,
 }
 
+pub fn png_size(data: &[u8]) -> Result<(usize, usize)> {
+    let body = data.strip_prefix(SIGNATURE).ok_or_else(|| Error::new("not a PNG file"))?;
+    match body.get(4..16) {
+        Some([b'I', b'H', b'D', b'R', w0, w1, w2, w3, h0, h1, h2, h3]) => {
+            Ok((u32::from_be_bytes([*w0, *w1, *w2, *w3]) as usize, u32::from_be_bytes([*h0, *h1, *h2, *h3]) as usize))
+        }
+        _ => Err(Error::new("PNG without a header")),
+    }
+}
+
 pub fn decode_png(data: &[u8]) -> Result<DecodedImage> {
     let body = data.strip_prefix(SIGNATURE).ok_or_else(|| Error::new("not a PNG file"))?;
     let mut header = None;
@@ -67,33 +79,45 @@ pub fn decode_png(data: &[u8]) -> Result<DecodedImage> {
         rest = rest.get(12 + length..).unwrap_or_default();
     }
     let header = header.ok_or_else(|| Error::new("PNG without a header"))?;
-    let mut filtered = Vec::new();
-    ZlibDecoder::new(compressed.as_slice())
-        .read_to_end(&mut filtered)
-        .map_err(|error| Error::new(format!("PNG data: {error}")))?;
+    let passes: Vec<Pass> = if header.interlaced { ADAM7.to_vec() } else { vec![(0, 0, 1, 1)] };
+    let layout: Vec<(Pass, usize, usize)> = passes
+        .into_iter()
+        .filter_map(|pass @ (x0, y0, step_x, step_y)| {
+            let columns = header.width.saturating_sub(x0).div_ceil(step_x);
+            let rows = header.height.saturating_sub(y0).div_ceil(step_y);
+            (columns > 0 && rows > 0).then_some((pass, columns, rows))
+        })
+        .collect();
+    let row_bytes = |columns: usize| (columns * header.bits_per_pixel()).div_ceil(8);
+    let expected = layout.iter().map(|&(_, columns, rows)| rows * (row_bytes(columns) + 1)).sum();
+    let mut filtered = inflate(compressed, expected)?;
     let mut rgba = vec![0u8; header.width * header.height * 4];
-    let passes: Vec<(usize, usize, usize, usize)> = if header.interlaced { ADAM7.to_vec() } else { vec![(0, 0, 1, 1)] };
     let mut offset = 0;
-    for (x0, y0, step_x, step_y) in passes {
-        let columns = header.width.saturating_sub(x0).div_ceil(step_x);
-        let rows = header.height.saturating_sub(y0).div_ceil(step_y);
-        if columns == 0 || rows == 0 {
-            continue;
-        }
-        let row_bytes = (columns * header.bits_per_pixel()).div_ceil(8);
-        let pass =
-            filtered.get(offset..offset + rows * (row_bytes + 1)).ok_or_else(|| Error::new("PNG data ends early"))?;
+    for ((x0, y0, step_x, step_y), columns, rows) in layout {
+        let row_bytes = row_bytes(columns);
+        let pass = filtered
+            .get_mut(offset..offset + rows * (row_bytes + 1))
+            .ok_or_else(|| Error::new("PNG data ends early"))?;
         offset += rows * (row_bytes + 1);
-        let unfiltered = unfilter(pass, row_bytes, header.bits_per_pixel().div_ceil(8))?;
-        for (row, line) in unfiltered.chunks_exact(row_bytes).enumerate() {
+        unfilter(pass, row_bytes, header.bits_per_pixel().div_ceil(8))?;
+        for (row, line) in pass.chunks_exact(row_bytes + 1).enumerate() {
             for column in 0..columns {
                 let (x, y) = (x0 + column * step_x, y0 + row * step_y);
                 let target = (y * header.width + x) * 4;
-                rgba[target..target + 4].copy_from_slice(&pixel(&header, &colors, line, column));
+                rgba[target..target + 4].copy_from_slice(&pixel(&header, &colors, &line[1..], column));
             }
         }
     }
     Ok(DecodedImage { width: header.width, height: header.height, rgba })
+}
+
+fn inflate(compressed: Vec<u8>, expected: usize) -> Result<Vec<u8>> {
+    let mut filtered = Vec::with_capacity(expected);
+    ZlibDecoder::new(compressed.as_slice())
+        .take(expected as u64)
+        .read_to_end(&mut filtered)
+        .map_err(|error| Error::new(format!("PNG data: {error}")))?;
+    Ok(filtered)
 }
 
 fn read_header(chunk: &[u8]) -> Result<Header> {
@@ -122,16 +146,19 @@ fn read_header(chunk: &[u8]) -> Result<Header> {
     Ok(header)
 }
 
-fn unfilter(pass: &[u8], row_bytes: usize, pixel_bytes: usize) -> Result<Vec<u8>> {
-    let mut out = Vec::with_capacity(pass.len());
-    let mut previous = vec![0u8; row_bytes];
-    for row in pass.chunks_exact(row_bytes + 1) {
-        let (filter, data) = (row[0], &row[1..]);
-        let mut current = data.to_vec();
+fn unfilter(pass: &mut [u8], row_bytes: usize, pixel_bytes: usize) -> Result<()> {
+    let stride = row_bytes + 1;
+    for row in 0..pass.len() / stride {
+        let (done, rest) = pass.split_at_mut(row * stride);
+        let previous = (row > 0).then(|| &done[done.len() - row_bytes..]);
+        let (filter, current) = (rest[0], &mut rest[1..stride]);
         for index in 0..row_bytes {
             let left = if index >= pixel_bytes { current[index - pixel_bytes] } else { 0 };
-            let up = previous[index];
-            let up_left = if index >= pixel_bytes { previous[index - pixel_bytes] } else { 0 };
+            let up = previous.map_or(0, |line| line[index]);
+            let up_left = match previous {
+                Some(line) if index >= pixel_bytes => line[index - pixel_bytes],
+                _ => 0,
+            };
             let prediction = match filter {
                 0 => 0,
                 1 => left,
@@ -142,10 +169,8 @@ fn unfilter(pass: &[u8], row_bytes: usize, pixel_bytes: usize) -> Result<Vec<u8>
             };
             current[index] = current[index].wrapping_add(prediction);
         }
-        out.extend_from_slice(&current);
-        previous = current;
     }
-    Ok(out)
+    Ok(())
 }
 
 fn paeth(left: u8, up: u8, up_left: u8) -> u8 {
@@ -174,16 +199,20 @@ fn sample(line: &[u8], depth: usize, index: usize) -> u16 {
 
 fn pixel(header: &Header, colors: &Colors, line: &[u8], column: usize) -> [u8; 4] {
     let channels = header.channels();
-    let raw: Vec<u16> = (0..channels).map(|channel| sample(line, header.depth, column * channels + channel)).collect();
+    let mut samples = [0u16; 4];
+    for (channel, value) in samples.iter_mut().enumerate().take(channels) {
+        *value = sample(line, header.depth, column * channels + channel);
+    }
+    let raw = &samples[..channels];
     let max = (1u32 << header.depth) - 1;
     let scaled = |value: u16| if header.depth == 16 { (value >> 8) as u8 } else { (value as u32 * 255 / max) as u8 };
     let opaque = |samples: &[u16]| if colors.transparent.as_deref() == Some(samples) { 0 } else { 255 };
     match header.color_type {
         0 => {
             let gray = scaled(raw[0]);
-            [gray, gray, gray, opaque(&raw)]
+            [gray, gray, gray, opaque(raw)]
         }
-        2 => [scaled(raw[0]), scaled(raw[1]), scaled(raw[2]), opaque(&raw)],
+        2 => [scaled(raw[0]), scaled(raw[1]), scaled(raw[2]), opaque(raw)],
         3 => {
             let index = raw[0] as usize;
             let [red, green, blue] = colors.palette.get(index).copied().unwrap_or_default();

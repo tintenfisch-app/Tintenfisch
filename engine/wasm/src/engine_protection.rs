@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tintenfisch::crypt::{Permissions, Protection};
+use tintenfisch::crypt::{EditRight, Permissions, Protection};
 use wasm_bindgen::prelude::*;
 
 use crate::engine::Engine;
@@ -37,6 +37,7 @@ struct ProtectionReply {
     encrypted: bool,
     owner_rights: bool,
     permissions: PermissionsMessage,
+    withheld: Vec<&'static str>,
 }
 
 #[wasm_bindgen]
@@ -47,6 +48,7 @@ impl Engine {
             encrypted: state.encrypted,
             owner_rights: state.owner_rights,
             permissions: state.permissions.into(),
+            withheld: state.withheld().into_iter().map(right_name).collect(),
         })
     }
 
@@ -73,5 +75,15 @@ impl Engine {
 
     pub fn unprotect(&mut self) -> Result<(), JsError> {
         self.document_mut()?.unprotect().map_err(fail)
+    }
+}
+
+fn right_name(right: EditRight) -> &'static str {
+    match right {
+        EditRight::FillForms => "fillForms",
+        EditRight::Annotate => "annotate",
+        EditRight::DesignForms => "designForms",
+        EditRight::ModifyContent => "modifyContent",
+        EditRight::Assemble => "assemble",
     }
 }

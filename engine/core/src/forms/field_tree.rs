@@ -165,7 +165,10 @@ impl<'s> FieldTree<'s> {
                 .or_else(|| parent.default_appearance.clone()),
             quadding: node.get("Q").and_then(Object::as_int).unwrap_or(parent.quadding),
             options: node.get("Opt").cloned().or_else(|| parent.options.clone()),
-            max_length: node.get("MaxLen").and_then(Object::as_int).or(parent.max_length),
+            max_length: node
+                .get("MaxLen")
+                .and_then(|length| self.store.resolve(length).ok()?.as_int())
+                .or(parent.max_length),
         }
     }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { EngineHost, type EngineBackend } from '@/worker/EngineHost.ts'
+import { EngineHost, type EngineBackend, type FontFetcher } from '@/worker/EngineHost.ts'
+import type { Request } from '@/types/protocol.ts'
 
 function backend(overrides: Partial<EngineBackend> = {}): EngineBackend {
   return {
@@ -54,6 +55,7 @@ function backend(overrides: Partial<EngineBackend> = {}): EngineBackend {
     applyRedactions: () => ({ dirtyPages: ['3-0'] }),
     addInkSignature: () => ({ fieldId: '70-0', dirtyPages: ['3-0'] }),
     addImageSignature: () => ({ fieldId: '71-0', dirtyPages: ['3-0'] }),
+    inspectCertificate: () => ({ signer: 'Ada Lovelace', validFrom: 0, validUntil: 1, validity: 'expired' }),
     signField: () => new Uint8Array([37, 80, 68, 70]),
     signatures: () => [],
     fields: () => [],
@@ -63,19 +65,25 @@ function backend(overrides: Partial<EngineBackend> = {}): EngineBackend {
     moveWidget: () => ({ dirtyPages: ['3-0'] }),
     deleteField: () => ({ dirtyPages: ['3-0'] }),
     revision: () => '4.0',
+    missingFontFiles: () => [],
+    registerFont: () => {},
     ...overrides,
   }
 }
 
+const noFonts: FontFetcher = async () => undefined
+
+const tile = (id: number): Request => ({ id, priority: 'visible', kind: 'renderTile', pageId: '3-0', scale: 1, x: 0, y: 0, width: 2, height: 1 })
+
 describe('EngineHost', () => {
   it('answers a command with the engine result under the request id', () => {
-    const { response, transfer } = new EngineHost(backend()).handle({ id: 7, priority: 'interactive', kind: 'open', bytes: new Uint8Array(3) })
+    const { response, transfer } = new EngineHost(backend(), noFonts).handle({ id: 7, priority: 'interactive', kind: 'open', bytes: new Uint8Array(3) })
     expect(response).toEqual({ id: 7, ok: true, result: { byteLength: 3 }, revision: '4.0' })
     expect(transfer).toEqual([])
   })
 
   it('returns tile pixels as a transferable buffer', () => {
-    const { response, transfer } = new EngineHost(backend()).handle({
+    const { response, transfer } = new EngineHost(backend(), noFonts).handle({
       id: 4,
       priority: 'visible',
       kind: 'renderTile',
@@ -91,7 +99,7 @@ describe('EngineHost', () => {
   })
 
   it('transfers saved bytes back instead of copying them', () => {
-    const { transfer } = new EngineHost(backend()).handle({ id: 9, priority: 'interactive', kind: 'save', optimize: false })
+    const { transfer } = new EngineHost(backend(), noFonts).handle({ id: 9, priority: 'interactive', kind: 'save', optimize: false })
     expect(transfer).toHaveLength(1)
   })
 
@@ -104,6 +112,7 @@ describe('EngineHost', () => {
           return null
         },
       }),
+      noFonts,
     )
     const draft = { clusters: ['n', 'e', 'w'], caret: 1, dx: 4, dy: 0, width: null, styles: [{ start: 0, end: 2, bold: true }], selection: [0, 2] as [number, number] }
     host.handle({ id: 3, priority: 'interactive', kind: 'previewEdit', pageId: '3-0', line: 2, draft })
@@ -117,8 +126,52 @@ describe('EngineHost', () => {
           throw new Error('not a PDF file')
         },
       }),
+      noFonts,
     )
     const { response } = host.handle({ id: 8, priority: 'interactive', kind: 'open', bytes: new Uint8Array(0) })
     expect(response).toEqual({ id: 8, ok: false, error: 'not a PDF file' })
+  })
+
+  it('fetches a missing font once before a page needs it and registers it', async () => {
+    const fetched: string[] = []
+    const registered: Array<[string, number]> = []
+    const host = new EngineHost(
+      backend({
+        missingFontFiles: () => (registered.length === 0 ? ['NotoSansCJK-Subset.otf'] : []),
+        registerFont: (fileName: string, bytes: Uint8Array) => {
+          registered.push([fileName, bytes.length])
+        },
+      }),
+      async (fileName) => {
+        fetched.push(fileName)
+        return new Uint8Array(5)
+      },
+    )
+    await Promise.all([host.prepare(tile(1)), host.prepare(tile(2))])
+    await host.prepare(tile(3))
+    expect(fetched).toEqual(['NotoSansCJK-Subset.otf'])
+    expect(registered).toEqual([['NotoSansCJK-Subset.otf', 5]])
+  })
+
+  it('only looks for missing fonts before rendering and survives a failed download', async () => {
+    const asked: string[] = []
+    const host = new EngineHost(
+      backend({
+        missingFontFiles: (pageId: string) => {
+          asked.push(pageId)
+          return ['NotoSansCJK-Subset.otf']
+        },
+        registerFont: () => {
+          throw new Error('not reached')
+        },
+      }),
+      async () => {
+        throw new Error('offline')
+      },
+    )
+    await host.prepare({ id: 1, priority: 'interactive', kind: 'pages' })
+    expect(asked).toEqual([])
+    await expect(host.prepare(tile(2))).resolves.toBeUndefined()
+    expect(asked).toEqual(['3-0'])
   })
 })

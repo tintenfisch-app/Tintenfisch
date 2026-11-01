@@ -209,7 +209,7 @@ impl<'a> AppearanceWriter<'a> {
         for (index, (text, _)) in wrapped.iter().enumerate() {
             let baseline = first_baseline - leading * index as f64;
             match field.kind {
-                FieldKind::Text { comb: Some(cells), .. } if cells > 0 => {
+                FieldKind::Text { comb: true, max_length: Some(cells), .. } => {
                     let cell = inner.width() / cells as f64;
                     for (position, character) in text.chars().take(cells).enumerate() {
                         let glyph = character.to_string();

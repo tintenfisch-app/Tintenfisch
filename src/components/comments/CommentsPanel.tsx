@@ -1,4 +1,5 @@
 import { CommentItem } from '@/components/comments/CommentItem.tsx'
+import { CommentOrder } from '@/lib/CommentOrder.ts'
 import { EmptyState, SidePanel } from '@/components/ui/SidePanel.tsx'
 import { useCommentsStore } from '@/stores/commentsStore.ts'
 import { useDocumentStore } from '@/stores/documentStore.ts'
@@ -11,21 +12,21 @@ export function CommentsPanel() {
   const { comments, selected, notice } = useCommentsStore()
   const document = useDocumentStore((state) => state.document)
   if (document.phase !== 'ready') return null
-  const numbers = new Map(document.pages.map((page, index) => [page.id, index + 1]))
+  const numbered = CommentOrder.byPage(comments, document.pages)
   return (
     <SidePanel title="Comments" side="right" onClose={() => workspace.showRight(null)}>
       {notice && (
         <Notice>{notice}</Notice>
       )}
-      {comments.length === 0 ? (
+      {numbered.length === 0 ? (
         <EmptyState title="Get started">
           <p>Add comments to make notes for yourself or others. Pick a sticky note, a text box or a drawing tool on the left.</p>
           <Button onClick={() => workspace.choose('note')}>Add a sticky note</Button>
         </EmptyState>
       ) : (
         <div className="flex flex-col gap-3">
-          {comments.map((comment) => (
-            <CommentItem key={comment.id} comment={comment} pageNumber={numbers.get(comment.pageId) ?? 0} selected={comment.id === selected} />
+          {numbered.map(({ comment, pageNumber }) => (
+            <CommentItem key={comment.id} comment={comment} pageNumber={pageNumber} selected={comment.id === selected} />
           ))}
         </div>
       )}

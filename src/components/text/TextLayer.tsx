@@ -28,6 +28,7 @@ export function TextLayer({ pageId, cssScale }: { pageId: string; cssScale: numb
   const addComment = useCommentsStore((state) => state.add)
   const active = editing.active?.pageId === pageId ? editing.active : null
   const caret = active ? active.caret : undefined
+  const typing = editing.typingPage === pageId
   const blocks = usePageTextBlocks(pageId)
   const dragging = useRef<number | null>(null)
 
@@ -122,7 +123,7 @@ export function TextLayer({ pageId, cssScale }: { pageId: string; cssScale: numb
       {active && <EditFrame frame={active.frame} cssScale={cssScale} />}
       {active && <HighlightBoxes boxes={active.selection} cssScale={cssScale} className={SELECTED} />}
       {caret && active?.selection.length === 0 && <HighlightBoxes boxes={[caret]} cssScale={cssScale} className="pointer-events-none animate-caret-blink border-l-[1.5px] border-caret" />}
-      {caret !== undefined && <EditInput caret={caret} cssScale={cssScale} />}
+      {typing && <EditInput caret={caret ?? null} cssScale={cssScale} />}
     </div>
   )
 }

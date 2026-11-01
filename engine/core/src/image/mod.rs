@@ -17,4 +17,4 @@ pub use image_description::{ImageDescription, Masking};
 pub use image_streams::ImageStreams;
 pub use jpeg_header::JpegHeader;
 pub use jpx::JpxImage;
-pub use png::decode_png;
+pub use png::{decode_png, png_size};

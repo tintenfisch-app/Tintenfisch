@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { PageSelection, type SelectionGesture } from '@/lib/PageSelection.ts'
 import { CancelledError, engine } from '@/services/EngineClient.ts'
 import { onDocumentReplaced, useDocumentStore } from '@/stores/documentStore.ts'
+import { useProtectionStore } from '@/stores/protectionStore.ts'
 import type { PagesChange, PageSummary } from '@/types/protocol.ts'
 
 export interface ExtractedPages {
@@ -40,6 +41,7 @@ export const usePagesStore = create<PagesStore>()((set, get) => {
   }
 
   const attempt = async (work: () => Promise<void>) => {
+    if (!useProtectionStore.getState().permits('assemble')) return
     try {
       await work()
     } catch (error) {

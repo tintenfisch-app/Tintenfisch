@@ -32,8 +32,8 @@ export function EditPanel() {
       <PanelSection>
         <SectionLabel>More options</SectionLabel>
         <PanelItem icon="view-grid" label="Organize pages" onClick={() => workspace.showRight('pages')} />
-        <PanelItem icon={TOOL_CATALOG.redactText.icon} label={TOOL_CATALOG.redactText.label} onClick={() => choose('redactText')} />
-        <PanelItem icon={TOOL_CATALOG.redactArea.icon} label={TOOL_CATALOG.redactArea.label} onClick={() => choose('redactArea')} />
+        <PanelItem icon={TOOL_CATALOG.redactText.icon} label={TOOL_CATALOG.redactText.label} chosen={tool === 'redactText'} onClick={() => pick('redactText')} />
+        <PanelItem icon={TOOL_CATALOG.redactArea.icon} label={TOOL_CATALOG.redactArea.label} chosen={tool === 'redactArea'} onClick={() => pick('redactArea')} />
       </PanelSection>
     </SidePanel>
   )

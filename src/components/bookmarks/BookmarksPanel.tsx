@@ -4,12 +4,14 @@ import { IconButton } from '@/components/ui/IconButton.tsx'
 import { EmptyState, PanelActions, SidePanel } from '@/components/ui/SidePanel.tsx'
 import { useBookmarksStore } from '@/stores/bookmarksStore.ts'
 import { useWorkspaceStore } from '@/stores/workspaceStore.ts'
+import { usePermission } from '@/hooks/usePermission.ts'
 import { Notice } from '@/components/ui/Text.tsx'
 
 export function BookmarksPanel() {
   const bookmarks = useBookmarksStore()
   const workspace = useWorkspaceStore()
   const { items, selected, notice } = bookmarks
+  const organizing = usePermission('assemble')
 
   function pressed(event: KeyboardEvent<HTMLElement>) {
     if (!selected || event.target instanceof HTMLInputElement) return
@@ -23,9 +25,9 @@ export function BookmarksPanel() {
 
   const actions = (
     <PanelActions>
-      <IconButton icon="add" label="Add bookmark" onClick={() => void bookmarks.add()} />
-      <IconButton icon="target" label="Set to current view" disabled={!selected} onClick={() => void bookmarks.setDestination()} />
-      <IconButton icon="delete" label="Delete bookmark" disabled={!selected} onClick={() => void bookmarks.removeSelected()} />
+      <IconButton icon="add" label="Add bookmark" disabled={!organizing} onClick={() => void bookmarks.add()} />
+      <IconButton icon="target" label="Set to current view" disabled={!selected || !organizing} onClick={() => void bookmarks.setDestination()} />
+      <IconButton icon="delete" label="Delete bookmark" disabled={!selected || !organizing} onClick={() => void bookmarks.removeSelected()} />
     </PanelActions>
   )
 

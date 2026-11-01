@@ -1,11 +1,14 @@
 export type Priority = 'interactive' | 'visible' | 'prefetch'
 
+export type XfaContent = 'absent' | 'hybrid' | 'dynamic'
+
 export interface Opened {
   version: string
   byteLength: number
   objectCount: number
   pageCount: number
   repaired: boolean
+  xfa: XfaContent
 }
 
 export type OpenResult = ({ status: 'opened' } & Opened) | { status: 'locked'; wrongPassword: boolean }
@@ -154,10 +157,13 @@ export interface Permissions {
   assemble: boolean
 }
 
+export type EditRight = 'fillForms' | 'annotate' | 'designForms' | 'modifyContent' | 'assemble'
+
 export interface ProtectionState {
   encrypted: boolean
   ownerRights: boolean
   permissions: Permissions
+  withheld: EditRight[]
 }
 
 export interface InsertedImage {
@@ -199,9 +205,21 @@ export interface SignatureInfo {
   signer: string | null
   signedAt: string
   reason: string
-  status: 'valid' | 'broken' | 'unsupported'
+  status: 'intact' | 'broken' | 'unsupported'
   problem: string | null
+  identity: SignerIdentity | null
+  identityProblem: string | null
   changedAfter: boolean
+}
+
+export type SignerIdentity = 'expired' | 'notYetValid' | 'unverified'
+
+
+export interface CertificateSummary {
+  signer: string
+  validFrom: number
+  validUntil: number
+  validity: 'current' | 'expired' | 'notYetValid'
 }
 
 export interface SigningRequest {
@@ -370,8 +388,9 @@ export type Command =
   | { kind: 'moveWidget'; pageId: string; widgetId: string; rect: Box }
   | { kind: 'deleteField'; fieldId: string }
   | { kind: 'addSignature'; pageId: string; rect: Box; name: string; mark: SignatureMarkRequest }
+  | { kind: 'inspectCertificate'; certificate: Uint8Array; password: string; now: number }
   | ({ kind: 'signField'; date: string } & SigningRequest)
-  | { kind: 'signatures' }
+  | { kind: 'signatures'; now: number }
   | { kind: 'undo' }
   | { kind: 'redo' }
 
@@ -429,6 +448,7 @@ export interface Results {
   moveWidget: DocumentChange
   deleteField: DocumentChange
   addSignature: AddedField
+  inspectCertificate: CertificateSummary
   signField: Uint8Array
   signatures: SignatureInfo[]
   undo: DocumentChange

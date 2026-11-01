@@ -7,9 +7,12 @@ use crate::fonts::FallbackFace;
 pub struct FontLibrary {
     faces: HashMap<FallbackFace, Rc<[u8]>>,
     replacements: HashMap<String, Vec<Rc<[u8]>>>,
+    cjk: Option<Rc<[u8]>>,
 }
 
 impl FontLibrary {
+    pub const CJK_FILE_NAME: &str = "NotoSansCJK-Subset.otf";
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -20,6 +23,14 @@ impl FontLibrary {
 
     pub fn register_replacement(&mut self, key: &str, data: impl Into<Rc<[u8]>>) {
         self.replacements.entry(key.to_string()).or_default().push(data.into());
+    }
+
+    pub fn register_cjk(&mut self, data: impl Into<Rc<[u8]>>) {
+        self.cjk = Some(data.into());
+    }
+
+    pub fn cjk_face(&self) -> Option<Rc<[u8]>> {
+        self.cjk.clone()
     }
 
     pub fn replacements(&self, key: &str) -> &[Rc<[u8]>] {

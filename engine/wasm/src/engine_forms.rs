@@ -186,7 +186,7 @@ impl Engine {
 
 fn field_reply(field: Field, pages: &[tintenfisch::pages::Page]) -> FieldReply {
     let (kind, multiline, password, max_length, editable) = match &field.kind {
-        FieldKind::Text { multiline, password, comb } => ("text", *multiline, *password, *comb, false),
+        FieldKind::Text { multiline, password, max_length, .. } => ("text", *multiline, *password, *max_length, false),
         FieldKind::Checkbox => ("checkbox", false, false, None, false),
         FieldKind::Radio => ("radio", false, false, None, false),
         FieldKind::PushButton => ("button", false, false, None, false),

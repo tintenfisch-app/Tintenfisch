@@ -59,10 +59,15 @@ export type EngineBackend = Pick<
   | 'deleteField'
   | 'addInkSignature'
   | 'addImageSignature'
+  | 'inspectCertificate'
   | 'signField'
   | 'signatures'
   | 'revision'
+  | 'missingFontFiles'
+  | 'registerFont'
 >
+
+export type FontFetcher = (fileName: string) => Promise<Uint8Array | undefined>
 
 export interface HostReply {
   response: Response
@@ -71,9 +76,36 @@ export interface HostReply {
 
 export class EngineHost {
   readonly #engine: EngineBackend
+  readonly #fetchFont: FontFetcher
+  readonly #fonts = new Map<string, Promise<void>>()
 
-  constructor(engine: EngineBackend) {
+  constructor(engine: EngineBackend, fetchFont: FontFetcher) {
     this.#engine = engine
+    this.#fetchFont = fetchFont
+  }
+
+  async prepare(request: Request): Promise<void> {
+    if (request.kind !== 'renderTile') return
+    let missing: string[]
+    try {
+      missing = this.#engine.missingFontFiles(request.pageId)
+    } catch {
+      return
+    }
+    await Promise.all(missing.map((fileName) => this.#loadFont(fileName)))
+  }
+
+  #loadFont(fileName: string): Promise<void> {
+    let loading = this.#fonts.get(fileName)
+    if (!loading) {
+      loading = this.#fetchFont(fileName)
+        .then((bytes) => {
+          if (bytes) this.#engine.registerFont(fileName, bytes)
+        })
+        .catch(() => undefined)
+      this.#fonts.set(fileName, loading)
+    }
+    return loading
   }
 
   handle(request: Request): HostReply {
@@ -201,10 +233,12 @@ export class EngineHost {
         if (mark.kind === 'ink') return this.#engine.addInkSignature(pageId, rect, name, { strokes: mark.strokes, penWidth: mark.penWidth, color: mark.color })
         return this.#engine.addImageSignature(pageId, rect, name, mark.width, mark.height, mark.rgba)
       }
+      case 'inspectCertificate':
+        return this.#engine.inspectCertificate(command.certificate, command.password, command.now)
       case 'signField':
         return this.#engine.signField(command.fieldId, command.certificate, command.password, command.reason, command.location, command.date)
       case 'signatures':
-        return this.#engine.signatures()
+        return this.#engine.signatures(command.now)
       case 'undo':
         return this.#engine.undo()
       case 'redo':

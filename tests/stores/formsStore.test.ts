@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { FormField, Request } from '@/types/protocol.ts'
 import { useDocumentStore } from '@/stores/documentStore.ts'
 import { useFormsStore } from '@/stores/formsStore.ts'
+import { useProtectionStore } from '@/stores/protectionStore.ts'
 import { FakeEnginePort } from '@tests/fakes/FakeEnginePort.ts'
 
 const widget = (id: string, onState: string | null = null) => ({ id, pageId: '4-0', rect: { x: 0, y: 0, width: 50, height: 20 }, onState })
@@ -66,6 +67,14 @@ describe('formsStore', () => {
     await port.answerNext(fields)
     await choosing
   })
+  it('leaves the engine alone while the document withholds form filling', async () => {
+    const { port, store } = await createStore()
+    const permissions = { print: true, printFaithful: true, modify: false, copy: true, annotate: false, fillForms: false, assemble: false }
+    useProtectionStore.setState({ current: { encrypted: true, ownerRights: false, permissions, withheld: ['fillForms'] } })
+    await store.fill('11-0', { kind: 'text', text: 'Grace' })
+    expect(port.requests).toHaveLength(1)
+  })
+
   it('names new fields by kind, lets a radio button join the selected group and selects the new field', async () => {
     const { port, store } = await createStore()
     const rect = { x: 10, y: 20, width: 150, height: 20 }
