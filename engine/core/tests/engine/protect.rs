@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use support::fixtures;
 use support::rendering::TestRenderer;
+use support::synthetic_pdf::{Row, SyntheticPdf};
 use tintenfisch::crypt::{Permissions, Protection};
 use tintenfisch::document::Document;
 use tintenfisch::error::ErrorKind;
@@ -120,6 +121,37 @@ fn removing_the_protection_of_an_rc4_file_gives_a_plain_file() {
     let plain = document.save(false).unwrap();
     assert!(!SourceFile::open(plain.clone()).unwrap().trailer().contains("Encrypt"));
     assert_eq!(rendering(plain, ""), rendering(source, "secret"));
+}
+
+fn versioned(header: &str, catalog_version: &str) -> Vec<u8> {
+    let mut pdf = SyntheticPdf::new(header);
+    pdf.object(1, 0, &format!("<< /Type /Catalog /Pages 2 0 R {catalog_version} >>"))
+        .object(2, 0, fixtures::PAGES)
+        .object(3, 0, fixtures::PAGE)
+        .stream(4, "", fixtures::CONTENT);
+    let rows: Vec<(u32, Row)> =
+        std::iter::once((0, Row::Free(65535))).chain((1..=4).map(|num| (num, Row::InUse(num)))).collect();
+    let start = pdf.xref_table(&rows, "/Size 5 /Root 1 0 R");
+    pdf.startxref(start).finish()
+}
+
+fn protected_version(bytes: Vec<u8>) -> (Vec<u8>, Option<String>) {
+    let mut document = Document::open(bytes, "").unwrap();
+    document.protect(&protection("user", "boss", Permissions::ALL), &entropy(6)).unwrap();
+    let saved = document.save(false).unwrap();
+    let file = SourceFile::open_with_password(saved.clone(), "boss").unwrap();
+    let catalog = file.object(file.trailer().get("Root").and_then(Object::as_reference).unwrap()).unwrap();
+    let version =
+        catalog.as_dict().unwrap().name("Version").map(|name| String::from_utf8_lossy(name.as_bytes()).into_owned());
+    (saved[..9].to_vec(), version)
+}
+
+#[test]
+fn aes_256_protection_declares_pdf_2_0_without_lowering_a_newer_version() {
+    assert_eq!(protected_version(versioned("1.4", "")), (b"%PDF-2.0\n".to_vec(), None));
+    assert_eq!(protected_version(versioned("1.4", "/Version /1.7")), (b"%PDF-2.0\n".to_vec(), Some("2.0".into())));
+    assert_eq!(protected_version(versioned("2.0", "/Version /2.1")), (b"%PDF-2.0\n".to_vec(), Some("2.1".into())));
+    assert_eq!(protected_version(versioned("2.1", "")), (b"%PDF-2.1\n".to_vec(), None));
 }
 
 #[test]
