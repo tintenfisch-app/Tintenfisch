@@ -39,7 +39,7 @@ impl Document {
             let form = ensure_form(transaction)?;
             let mut resources = Dict::new();
             if let SignatureMark::Image(image) = mark {
-                let id = ImageStreams::rgb(image).allocate(transaction);
+                let id = ImageStreams::rgb(image)?.allocate(transaction);
                 resources.insert("XObject", Object::Dict([(picture.clone(), Object::Ref(id))].into_iter().collect()));
             }
             let appearance: Dict = [

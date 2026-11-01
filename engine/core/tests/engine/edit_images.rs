@@ -4,12 +4,14 @@ use std::fs;
 use std::path::Path;
 
 use support::fixtures;
+use support::random::Random;
 use support::rendering::library;
 use tintenfisch::document::Document;
 use tintenfisch::fonts::FontLibrary;
 use tintenfisch::page_images::ImageFrame;
 use tintenfisch::pages::PageId;
-use tintenfisch::syntax::Object;
+use tintenfisch::syntax::{Object, Stream};
+use tiny_skia::Pixmap;
 
 struct Desk {
     document: Document,
@@ -272,6 +274,55 @@ fn a_large_picture_shrinks_to_fit_the_page() {
     let mut desk = Desk::open(fixtures::image_placement_features());
     let index = desk.document.insert_image(desk.pages[0], &picture("png/wide.png"), (200.0, 200.0)).unwrap();
     assert_frame(&desk.images(0)[index], &frame(40.0, 160.0, 320.0, 80.0));
+}
+
+fn noise_png(width: u32, height: u32) -> Vec<u8> {
+    let mut random = Random::new(21);
+    let mut pixmap = Pixmap::new(width, height).unwrap();
+    for pixel in pixmap.data_mut().as_chunks_mut::<4>().0 {
+        let [red, green, blue, ..] = random.next().to_le_bytes();
+        *pixel = [red, green, blue, 255];
+    }
+    pixmap.encode_png().unwrap()
+}
+
+fn image_streams(document: &Document) -> Vec<Stream> {
+    let store = document.store();
+    store
+        .ids()
+        .into_iter()
+        .filter_map(|id| store.object(id).ok()?.as_stream().cloned())
+        .filter(|stream| matches!(stream.dict.get("Subtype"), Some(Object::Name(name)) if name.is("Image")))
+        .collect()
+}
+
+#[test]
+fn a_huge_replacement_is_downscaled_and_stored_compressed() {
+    let mut desk = Desk::open(fixtures::image_placement_features());
+    let noise = noise_png(4000, 3000);
+    desk.document.replace_image(desk.pages[0], 0, &noise).unwrap();
+    let size = |stream: &Stream, key: &str| stream.dict.get(key).and_then(Object::as_number).unwrap_or(0.0) as usize;
+    let streams = image_streams(&desk.document);
+    assert!(streams.iter().all(|stream| size(stream, "Width") <= 4096 && size(stream, "Height") <= 4096));
+    let image = streams.iter().find(|stream| size(stream, "Width") == 2000).expect("the picture is halved");
+    assert_eq!(size(image, "Height"), 1500);
+    assert!(matches!(image.dict.get("Filter"), Some(Object::Name(name)) if name.is("FlateDecode")));
+    assert!(image.raw.len() < 2000 * 1500 * 3 + 64 * 1024, "{} bytes", image.raw.len());
+    let height = 80.0 * 3.0 / 4.0;
+    assert_frame(&desk.images(0)[0], &frame(40.0, 100.0 + (60.0 - height) / 2.0, 80.0, height));
+    let saved = desk.document.save(false).unwrap();
+    assert!(saved.len() < noise.len() / 3, "{} bytes saved for a {} byte picture", saved.len(), noise.len());
+}
+
+#[test]
+fn an_absurdly_large_picture_is_refused_before_it_is_decoded() {
+    let mut desk = Desk::open(fixtures::image_placement_features());
+    let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+    png.extend_from_slice(&[0, 0, 0x4e, 0x20, 0, 0, 0x4e, 0x20, 8, 2, 0, 0, 0, 0, 0, 0, 0]);
+    let refused = desk.document.replace_image(desk.pages[0], 0, &png).unwrap_err();
+    assert!(refused.message.contains("20000 by 20000 pixels"), "{}", refused.message);
+    assert!(refused.message.contains("50 megapixels"), "{}", refused.message);
+    assert_frame(&desk.images(0)[0], &frame(40.0, 100.0, 80.0, 60.0));
 }
 
 #[test]
