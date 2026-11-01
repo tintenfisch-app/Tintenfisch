@@ -8,6 +8,8 @@ export type RightPanel = 'comments' | 'pages' | 'bookmarks'
 
 export const EDITING_TOOLS: readonly Tool[] = ['edit', 'addText', 'addImage', 'link']
 
+const EDIT_PANEL_TOOLS: readonly Tool[] = [...EDITING_TOOLS, 'redactText', 'redactArea']
+
 export const DRAWING_TOOLS: readonly Tool[] = ['note', 'textBox', 'ink', 'rectangle', 'ellipse', 'arrow', 'stamp', 'redactArea']
 
 export const MARKUP_COLORS: readonly Rgb[] = [
@@ -57,7 +59,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
 
   choose(tool) {
     const { left } = get()
-    set({ tool, left: EDITING_TOOLS.includes(tool) ? 'edit' : left === 'edit' ? 'tools' : left })
+    const leavesEdit = left === 'edit' && !EDIT_PANEL_TOOLS.includes(tool)
+    set({ tool, left: EDITING_TOOLS.includes(tool) ? 'edit' : leavesEdit ? 'tools' : left })
   },
 
   setColor(color) {
@@ -75,7 +78,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   showLeft(left) {
     const { tool } = get()
     const editing = EDITING_TOOLS.includes(tool)
-    if (left === 'edit' && !editing) set({ left, tool: 'edit' })
+    if (left === 'edit' && !EDIT_PANEL_TOOLS.includes(tool)) set({ left, tool: 'edit' })
     else if (left !== 'edit' && editing) set({ left, tool: 'select' })
     else if (left !== get().left) set({ left })
   },

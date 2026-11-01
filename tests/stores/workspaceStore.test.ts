@@ -26,6 +26,16 @@ describe('workspaceStore', () => {
     expect(workspace()).toMatchObject({ left: 'edit', right: null, sheet: false })
   })
 
+  it('stays on the edit panel when a redaction tool is picked from it', () => {
+    workspace().showLeft('edit')
+    workspace().choose('redactText')
+    expect(workspace()).toMatchObject({ tool: 'redactText', left: 'edit' })
+    workspace().choose('redactArea')
+    expect(workspace()).toMatchObject({ tool: 'redactArea', left: 'edit' })
+    workspace().choose('ink')
+    expect(workspace()).toMatchObject({ tool: 'ink', left: 'tools' })
+  })
+
   it('tells listeners only about real changes', () => {
     let calls = 0
     const stop = useWorkspaceStore.subscribe(() => calls++)
