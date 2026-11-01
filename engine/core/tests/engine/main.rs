@@ -2,6 +2,7 @@ mod support;
 
 mod add_text;
 mod annotate;
+mod cjk_text;
 mod design_form;
 mod edit_form;
 mod edit_fuzz;

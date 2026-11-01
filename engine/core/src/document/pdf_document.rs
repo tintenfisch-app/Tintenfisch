@@ -41,6 +41,10 @@ impl Document {
         DocumentView { store: &self.store, caches: &self.caches, library }
     }
 
+    pub fn forget_fonts(&self) {
+        self.caches.fonts.clear();
+    }
+
     pub fn save(&self, optimize: bool) -> Result<Vec<u8>> {
         match &self.encryption {
             Some(encryption) => FullRewriter::new(&self.store).encrypted(encryption).write(),

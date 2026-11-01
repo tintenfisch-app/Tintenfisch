@@ -7,6 +7,7 @@ function runtime() {
   const posted: Response[] = []
   const waiting: Array<() => void> = []
   const handler = {
+    prepare: async () => {},
     handle: (request: Request) => {
       handled.push(request.id)
       return { response: { id: request.id, ok: true as const, result: null, revision: '' }, transfer: [] }
@@ -44,5 +45,33 @@ describe('WorkerRuntime', () => {
     await step()
     expect(handled).toEqual([2])
     expect(posted.filter((response) => !response.ok).map((response) => response.id)).toEqual([1, 3])
+  })
+
+  it('handles a request only after its preparation finished', async () => {
+    const events: string[] = []
+    let finish = () => {}
+    const handler = {
+      prepare: (request: Request) =>
+        new Promise<void>((resolve) => {
+          events.push(`prepare ${request.id}`)
+          finish = () => {
+            events.push(`prepared ${request.id}`)
+            resolve()
+          }
+        }),
+      handle: (request: Request) => {
+        events.push(`handle ${request.id}`)
+        return { response: { id: request.id, ok: true as const, result: null, revision: '' }, transfer: [] }
+      },
+    }
+    const waiting: Array<() => void> = []
+    const worker = new WorkerRuntime(Promise.resolve(handler), () => {}, (resume) => waiting.push(resume))
+    worker.receive(pages(1, 'visible'))
+    waiting.shift()?.()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(events).toEqual(['prepare 1'])
+    finish()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(events).toEqual(['prepare 1', 'prepared 1', 'handle 1'])
   })
 })

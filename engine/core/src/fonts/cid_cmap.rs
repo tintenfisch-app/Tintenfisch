@@ -1,6 +1,8 @@
 use crate::syntax::Name;
 use crate::syntax::lexer::{Lexer, Token};
 
+const FIRST_ASCII_CID: u32 = 1;
+
 #[derive(Clone, Debug, PartialEq)]
 struct CodespaceRange {
     length: usize,
@@ -16,11 +18,81 @@ struct CidRange {
     cid: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum UnicodeForm {
+    Ucs2,
+    Utf16,
+    Utf8,
+    Utf32,
+}
+
+impl UnicodeForm {
+    fn of(name: &[u8]) -> Option<UnicodeForm> {
+        let mut parts = name.split(|&byte| byte == b'-');
+        if !parts.next()?.starts_with(b"Uni") {
+            return None;
+        }
+        match parts.next()? {
+            b"UCS2" => Some(UnicodeForm::Ucs2),
+            b"UTF16" => Some(UnicodeForm::Utf16),
+            b"UTF8" => Some(UnicodeForm::Utf8),
+            b"UTF32" => Some(UnicodeForm::Utf32),
+            _ => None,
+        }
+    }
+
+    fn codespaces(self) -> Vec<CodespaceRange> {
+        let range = |length, low, high| CodespaceRange { length, low, high };
+        match self {
+            UnicodeForm::Ucs2 => vec![range(2, 0, 0xFFFF)],
+            UnicodeForm::Utf16 => vec![range(2, 0, 0xD7FF), range(2, 0xE000, 0xFFFF), range(4, 0xD800DC00, 0xDBFFDFFF)],
+            UnicodeForm::Utf8 => vec![
+                range(1, 0, 0x7F),
+                range(2, 0xC280, 0xDFBF),
+                range(3, 0xE0A080, 0xEFBFBF),
+                range(4, 0xF0908080, 0xF48FBFBF),
+            ],
+            UnicodeForm::Utf32 => vec![range(4, 0, 0x10FFFF)],
+        }
+    }
+
+    fn decode(self, code: u32) -> Option<char> {
+        match self {
+            UnicodeForm::Ucs2 | UnicodeForm::Utf32 => char::from_u32(code),
+            UnicodeForm::Utf16 if code > 0xFFFF => char::decode_utf16([(code >> 16) as u16, code as u16]).next()?.ok(),
+            UnicodeForm::Utf16 => char::from_u32(code),
+            UnicodeForm::Utf8 => {
+                let bytes = code.to_be_bytes();
+                let first = bytes.iter().position(|&byte| byte != 0).unwrap_or(3);
+                std::str::from_utf8(&bytes[first..]).ok()?.chars().next()
+            }
+        }
+    }
+
+    fn encode(self, character: char) -> Option<(u32, usize)> {
+        match self {
+            UnicodeForm::Ucs2 => u16::try_from(character as u32).ok().map(|unit| (unit as u32, 2)),
+            UnicodeForm::Utf16 => {
+                let mut units = [0; 2];
+                let units = character.encode_utf16(&mut units);
+                Some((units.iter().fold(0, |code, &unit| code << 16 | unit as u32), units.len() * 2))
+            }
+            UnicodeForm::Utf8 => {
+                let mut bytes = [0; 4];
+                let bytes = character.encode_utf8(&mut bytes);
+                Some((number(bytes.as_bytes()), bytes.len()))
+            }
+            UnicodeForm::Utf32 => Some((character as u32, 4)),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CidCmap {
     codespaces: Vec<CodespaceRange>,
     ranges: Vec<CidRange>,
     identity: bool,
+    unicode: Option<UnicodeForm>,
     pub vertical: bool,
 }
 
@@ -30,6 +102,7 @@ impl CidCmap {
             codespaces: vec![CodespaceRange { length: 2, low: 0, high: 0xFFFF }],
             ranges: Vec::new(),
             identity: true,
+            unicode: None,
             vertical,
         }
     }
@@ -38,12 +111,35 @@ impl CidCmap {
         self.identity
     }
 
+    pub fn is_unicode(&self) -> bool {
+        self.unicode.is_some()
+    }
+
     pub fn predefined(name: &Name) -> Self {
-        Self::identity(name.as_bytes().ends_with(b"-V"))
+        let vertical = name.as_bytes().ends_with(b"-V");
+        match UnicodeForm::of(name.as_bytes()) {
+            Some(form) => Self {
+                codespaces: form.codespaces(),
+                ranges: Vec::new(),
+                identity: false,
+                unicode: Some(form),
+                vertical,
+            },
+            None => Self::identity(vertical),
+        }
+    }
+
+    pub fn unicode(&self, code: u32) -> Option<char> {
+        self.unicode?.decode(code)
+    }
+
+    pub fn code_for(&self, character: char) -> Option<(u32, usize)> {
+        self.unicode?.encode(character)
     }
 
     pub fn parse(data: &[u8]) -> Self {
-        let mut cmap = CidCmap { codespaces: Vec::new(), ranges: Vec::new(), identity: false, vertical: false };
+        let mut cmap =
+            CidCmap { codespaces: Vec::new(), ranges: Vec::new(), identity: false, unicode: None, vertical: false };
         let mut lexer = Lexer::new(data, 0);
         let mut operands: Vec<Token> = Vec::new();
         while let Ok(Some(token)) = lexer.next_token() {
@@ -118,6 +214,12 @@ impl CidCmap {
         if self.identity {
             return code;
         }
+        if self.unicode.is_some() {
+            return match self.unicode(code) {
+                Some(character @ ' '..='~') => character as u32 - ' ' as u32 + FIRST_ASCII_CID,
+                _ => 0,
+            };
+        }
         self.ranges
             .iter()
             .rev()
@@ -156,5 +258,40 @@ mod tests {
         assert_eq!(cmap.next_code(b"\x01\x02\x03"), (0x0102, 2));
         assert_eq!(cmap.cid(0x0102, 2), 0x0102);
         assert!(CidCmap::predefined(&Name::from("Identity-V")).vertical);
+    }
+
+    #[test]
+    fn reads_predefined_unicode_cmaps_as_their_own_code_points() {
+        let ucs2 = CidCmap::predefined(&Name::from("UniGB-UCS2-H"));
+        assert_eq!(
+            ucs2.next_code("中A".encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<_>>().as_slice()),
+            (0x4E2D, 2)
+        );
+        assert_eq!(ucs2.unicode(0x4E2D), Some('中'));
+        assert_eq!(ucs2.cid(0x41, 2), 34);
+        assert_eq!(ucs2.cid(0x4E2D, 2), 0);
+        assert_eq!(ucs2.code_for('日'), Some((0x65E5, 2)));
+        assert!(!ucs2.vertical);
+
+        let utf16 = CidCmap::predefined(&Name::from("UniJIS-UTF16-V"));
+        assert!(utf16.vertical);
+        assert_eq!(utf16.next_code(b"\xD8\x40\xDC\x0B\x30\x42"), (0xD840DC0B, 4));
+        assert_eq!(utf16.unicode(0xD840DC0B), Some('\u{2000B}'));
+        assert_eq!(utf16.code_for('\u{2000B}'), Some((0xD840DC0B, 4)));
+        assert_eq!(utf16.next_code(b"\x30\x42"), (0x3042, 2));
+
+        let utf8 = CidCmap::predefined(&Name::from("UniKS-UTF8-H"));
+        let bytes = "A한".as_bytes();
+        assert_eq!(utf8.next_code(bytes), (0x41, 1));
+        let (code, length) = utf8.next_code(&bytes[1..]);
+        assert_eq!((utf8.unicode(code), length), (Some('한'), 3));
+        assert_eq!(utf8.code_for('한'), Some((code, 3)));
+
+        let utf32 = CidCmap::predefined(&Name::from("UniCNS-UTF32-H"));
+        assert_eq!(utf32.next_code(&[0, 0, 0x4E, 0x2D]), (0x4E2D, 4));
+        assert_eq!(utf32.unicode(0x4E2D), Some('中'));
+
+        assert!(CidCmap::predefined(&Name::from("UniJIS-UCS2-HW-H")).is_unicode());
+        assert!(!CidCmap::predefined(&Name::from("GBK-EUC-H")).is_unicode());
     }
 }

@@ -1,5 +1,5 @@
 use crate::geometry::Rect;
-use crate::text::{LayoutLine, TextGlyph, group_lines, to_display_space, to_line_space};
+use crate::text::{LayoutLine, TextGlyph, arabic_base_letters, group_lines, to_display_space, to_line_space};
 
 const MARGIN_LINES: f64 = 1.5;
 
@@ -244,33 +244,54 @@ impl TextLayout {
     }
 
     pub fn find(&self, query: &str) -> Vec<(TextPosition, TextPosition)> {
-        let needle: Vec<String> = query.chars().map(|character| character.to_lowercase().collect()).collect();
+        let needle: Vec<char> = query.chars().flat_map(searchable).collect();
         if needle.is_empty() {
             return Vec::new();
         }
+        let mut needles = vec![needle.clone()];
+        if needle.iter().copied().any(is_right_to_left) {
+            needles.push(needle.into_iter().rev().collect());
+        }
         let mut matches = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
-            let haystack: Vec<(usize, String)> = line
+            let haystack: Vec<(usize, char)> = line
                 .clusters
                 .iter()
                 .enumerate()
                 .flat_map(|(cluster, text)| {
-                    text.text.chars().map(move |character| (cluster, character.to_lowercase().collect::<String>()))
+                    text.text.chars().flat_map(searchable).map(move |character| (cluster, character))
                 })
                 .collect();
-            let mut start = 0;
-            while start + needle.len() <= haystack.len() {
-                if haystack[start..start + needle.len()].iter().zip(&needle).all(|((_, a), b)| a == b) {
-                    let from = haystack[start].0;
-                    let to = haystack[start + needle.len() - 1].0 + 1;
-                    matches
-                        .push((TextPosition { line: index, offset: from }, TextPosition { line: index, offset: to }));
-                    start += needle.len();
-                } else {
-                    start += 1;
+            for needle in &needles {
+                let mut start = 0;
+                while start + needle.len() <= haystack.len() {
+                    if haystack[start..start + needle.len()].iter().zip(needle).all(|((_, a), b)| a == b) {
+                        let from = haystack[start].0;
+                        let to = haystack[start + needle.len() - 1].0 + 1;
+                        matches.push((
+                            TextPosition { line: index, offset: from },
+                            TextPosition { line: index, offset: to },
+                        ));
+                        start += needle.len();
+                    } else {
+                        start += 1;
+                    }
                 }
             }
         }
+        matches.sort();
+        matches.dedup();
         matches
     }
+}
+
+fn searchable(character: char) -> Vec<char> {
+    match arabic_base_letters(character) {
+        Some(letters) => letters.chars().flat_map(char::to_lowercase).collect(),
+        None => character.to_lowercase().collect(),
+    }
+}
+
+fn is_right_to_left(character: char) -> bool {
+    matches!(character, '\u{0590}'..='\u{08FF}' | '\u{FB1D}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFF}')
 }

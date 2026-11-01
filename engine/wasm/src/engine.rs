@@ -37,12 +37,28 @@ impl Engine {
 
     #[wasm_bindgen(js_name = registerFont)]
     pub fn register_font(&mut self, file_name: &str, bytes: Vec<u8>) -> Result<(), JsError> {
+        if file_name == FontLibrary::CJK_FILE_NAME {
+            self.library.register_cjk(bytes);
+            if let Some(document) = &self.document {
+                document.forget_fonts();
+            }
+            return Ok(());
+        }
         let face = FallbackFace::ALL
             .into_iter()
             .find(|face| face.file_name() == file_name)
             .ok_or_else(|| JsError::new(&format!("{file_name} is not a fallback font")))?;
         self.library.register(face, bytes);
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name = missingFontFiles)]
+    pub fn missing_font_files(&self, page: &str) -> Result<Vec<String>, JsError> {
+        if self.library.cjk_face().is_some() {
+            return Ok(Vec::new());
+        }
+        let needed = self.document()?.view(&self.library).needs_cjk_substitute(page_id(page)?).map_err(fail)?;
+        Ok(if needed { vec![FontLibrary::CJK_FILE_NAME.to_string()] } else { Vec::new() })
     }
 
     pub fn open(&mut self, bytes: Vec<u8>) -> Result<JsValue, JsError> {

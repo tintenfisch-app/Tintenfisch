@@ -19,6 +19,10 @@ impl FontCache {
         Self::default()
     }
 
+    pub fn clear(&self) {
+        self.fonts.borrow_mut().clear();
+    }
+
     pub fn font(&self, object: &Object, store: &ObjectStore, library: &FontLibrary) -> Result<Rc<Font>> {
         let Some(id) = object.as_reference() else {
             return Self::load(object, store, library);
