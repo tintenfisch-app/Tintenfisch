@@ -1,5 +1,7 @@
 import { create } from 'zustand'
+import { certificateWarning } from '@/lib/certificateWarning.ts'
 import { pdfDate } from '@/lib/pdfDate.ts'
+import { sentence } from '@/lib/sentence.ts'
 import { CancelledError, engine } from '@/services/EngineClient.ts'
 import { onDocumentReplaced, useDocumentStore } from '@/stores/documentStore.ts'
 import type { SignatureInfo, SigningRequest } from '@/types/protocol.ts'
@@ -8,11 +10,13 @@ interface DigitalSignatureStore {
   dialogOpen: boolean
   signing: boolean
   notice: string | null
+  warning: string | null
   reports: SignatureInfo[]
   reload(): Promise<void>
   openDialog(): void
   closeDialog(): void
-  sign(request: SigningRequest): Promise<{ name: string; bytes: Uint8Array } | null>
+  dismissWarning(): void
+  sign(request: SigningRequest, confirmed?: boolean): Promise<{ name: string; bytes: Uint8Array } | null>
   reset(): void
 }
 
@@ -25,6 +29,7 @@ export const useDigitalSignatureStore = create<DigitalSignatureStore>()((set, ge
   dialogOpen: false,
   signing: false,
   notice: null,
+  warning: null,
   reports: [],
 
   async reload() {
@@ -36,31 +41,43 @@ export const useDigitalSignatureStore = create<DigitalSignatureStore>()((set, ge
   },
 
   openDialog() {
-    set({ dialogOpen: true, notice: null })
+    set({ dialogOpen: true, notice: null, warning: null })
   },
 
   closeDialog() {
-    if (!get().signing) set({ dialogOpen: false })
+    if (!get().signing) set({ dialogOpen: false, warning: null })
   },
 
-  async sign(request) {
+  dismissWarning() {
+    set({ warning: null })
+  },
+
+  async sign(request, confirmed = false) {
     const { document } = useDocumentStore.getState()
     if (document.phase !== 'ready' || get().signing) return null
-    set({ signing: true, notice: null })
+    set({ signing: true, notice: null, warning: null })
     try {
+      if (!confirmed) {
+        const certificate = await engine.request({ kind: 'inspectCertificate', certificate: request.certificate, password: request.password, now: Date.now() })
+        const warning = certificateWarning(certificate)
+        if (warning) {
+          set({ signing: false, warning })
+          return null
+        }
+      }
       const bytes = await engine.request({ kind: 'signField', ...request, date: pdfDate(new Date()) })
       const name = signedName(document.name)
       set({ signing: false, dialogOpen: false })
       await useDocumentStore.getState().open(name, bytes.slice())
       return { name, bytes }
     } catch (error) {
-      set({ signing: false, notice: error instanceof CancelledError ? null : (error as Error).message })
+      set({ signing: false, notice: error instanceof CancelledError ? null : sentence((error as Error).message) })
       return null
     }
   },
 
   reset() {
-    set({ dialogOpen: false, signing: false, notice: null, reports: [] })
+    set({ dialogOpen: false, signing: false, notice: null, warning: null, reports: [] })
   },
 }))
 

@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use der::Encode;
 use pkcs8::{DecodePrivateKey, DecodePublicKey, PrivateKeyInfoRef};
 use rsa::{RsaPrivateKey, RsaPublicKey};
@@ -5,6 +7,7 @@ use x509_cert::Certificate;
 use x509_cert::name::Name;
 
 use crate::error::{Error, Result};
+use crate::signing::certificate_validity::CertificateValidity;
 use crate::signing::digest_algorithm::DigestAlgorithm;
 use crate::signing::oids;
 use crate::signing::pkcs12_archive::Pkcs12Archive;
@@ -45,6 +48,18 @@ impl SigningIdentity {
 
     pub fn chain(&self) -> &[Certificate] {
         &self.chain
+    }
+
+    pub fn validity(&self, at: SystemTime) -> CertificateValidity {
+        CertificateValidity::of(&self.certificate, at)
+    }
+
+    pub fn valid_from(&self) -> SystemTime {
+        UNIX_EPOCH + self.certificate.tbs_certificate().validity().not_before.to_unix_duration()
+    }
+
+    pub fn valid_until(&self) -> SystemTime {
+        UNIX_EPOCH + self.certificate.tbs_certificate().validity().not_after.to_unix_duration()
     }
 
     pub fn signer_name(&self) -> String {

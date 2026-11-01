@@ -2,7 +2,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tintenfisch::image::DecodedImage;
-use tintenfisch::signing::{IdentityStatus, SignatureMark, SignatureStatus, SigningDetails, SigningIdentity};
+use tintenfisch::signing::{
+    CertificateValidity, IdentityStatus, SignatureMark, SignatureStatus, SigningDetails, SigningIdentity,
+};
 use wasm_bindgen::prelude::*;
 
 use crate::engine::{Engine, page_id};
@@ -33,8 +35,33 @@ struct SignatureReply {
     changed_after: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CertificateReply {
+    signer: String,
+    valid_from: f64,
+    valid_until: f64,
+    validity: &'static str,
+}
+
 #[wasm_bindgen]
 impl Engine {
+    #[wasm_bindgen(js_name = inspectCertificate)]
+    pub fn inspect_certificate(&self, certificate: Vec<u8>, password: &str, now: f64) -> Result<JsValue, JsError> {
+        let identity = SigningIdentity::from_pkcs12(&certificate, password).map_err(fail)?;
+        let validity = match identity.validity(moment(now)) {
+            CertificateValidity::Current => "current",
+            CertificateValidity::Expired => "expired",
+            CertificateValidity::NotYetValid => "notYetValid",
+        };
+        reply(&CertificateReply {
+            signer: identity.signer_name(),
+            valid_from: milliseconds(identity.valid_from()),
+            valid_until: milliseconds(identity.valid_until()),
+            validity,
+        })
+    }
+
     #[wasm_bindgen(js_name = signField)]
     pub fn sign_field(
         &mut self,
@@ -129,4 +156,8 @@ impl Engine {
 
 fn moment(milliseconds: f64) -> SystemTime {
     UNIX_EPOCH + Duration::from_millis(milliseconds.max(0.0) as u64)
+}
+
+fn milliseconds(time: SystemTime) -> f64 {
+    time.duration_since(UNIX_EPOCH).map_or(0.0, |duration| duration.as_millis() as f64)
 }

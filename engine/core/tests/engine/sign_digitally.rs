@@ -13,7 +13,8 @@ use tintenfisch::forms::NewFieldKind;
 use tintenfisch::geometry::Rect;
 use tintenfisch::pages::PageId;
 use tintenfisch::signing::{
-    IdentityStatus, SignatureMark, SignatureReport, SignatureStatus, SigningDetails, SigningIdentity,
+    CertificateValidity, IdentityStatus, SignatureMark, SignatureReport, SignatureStatus, SigningDetails,
+    SigningIdentity,
 };
 use tintenfisch::syntax::{ObjId, Object};
 
@@ -21,6 +22,7 @@ const PASSWORD: &str = "tintenfisch-test";
 const NOVEMBER_2026: u64 = 1_793_491_200;
 const JANUARY_2026: u64 = 1_767_225_600;
 const JUNE_2019: u64 = 1_559_347_200;
+const NEW_YEAR_2020: u64 = 1_577_836_800;
 
 struct Office {
     document: Document,
@@ -192,6 +194,29 @@ fn wrong_passwords_other_keys_and_fields_are_refused() {
     office.document.sign_field(field, &identity, &details()).unwrap();
     assert_eq!(office.document.sign_field(field, &identity, &details()).unwrap_err().kind, ErrorKind::Unsupported);
     assert!(Office::open(fixtures::editing_features()).document.signatures(at(NOVEMBER_2026)).unwrap().is_empty());
+}
+
+#[test]
+fn the_validity_period_of_a_certificate_is_known_before_signing() {
+    let expired = identity("test-signer-expired.p12");
+    assert_eq!(expired.validity(at(NOVEMBER_2026)), CertificateValidity::Expired);
+    assert_eq!(expired.validity(at(JUNE_2019)), CertificateValidity::Current);
+    assert_eq!(expired.valid_until(), at(NEW_YEAR_2020));
+    let current = identity("test-signer.p12");
+    assert_eq!(current.validity(at(NOVEMBER_2026)), CertificateValidity::Current);
+    assert_eq!(current.validity(at(JANUARY_2026)), CertificateValidity::NotYetValid);
+}
+
+#[test]
+fn a_file_that_is_no_certificate_is_told_apart_from_a_wrong_password() {
+    let bytes = std::fs::read("tests/certificates/test-signer.p12").unwrap();
+    for broken in [&b"random bytes named .p12"[..], &bytes[..bytes.len() / 2]] {
+        let error = SigningIdentity::from_pkcs12(broken, PASSWORD).err().unwrap();
+        assert_eq!(error.kind, ErrorKind::Malformed);
+        assert_eq!(error.message, "this file is not a valid certificate (.p12 / .pfx)");
+    }
+    let wrong = SigningIdentity::from_pkcs12(&bytes, "guess").err().unwrap();
+    assert_eq!(wrong.message, "the password does not open the certificate file");
 }
 
 #[test]

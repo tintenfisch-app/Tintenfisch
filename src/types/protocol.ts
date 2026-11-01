@@ -209,6 +209,13 @@ export interface SignatureInfo {
 export type SignerIdentity = 'expired' | 'notYetValid' | 'unverified'
 
 
+export interface CertificateSummary {
+  signer: string
+  validFrom: number
+  validUntil: number
+  validity: 'current' | 'expired' | 'notYetValid'
+}
+
 export interface SigningRequest {
   fieldId: string
   certificate: Uint8Array
@@ -375,6 +382,7 @@ export type Command =
   | { kind: 'moveWidget'; pageId: string; widgetId: string; rect: Box }
   | { kind: 'deleteField'; fieldId: string }
   | { kind: 'addSignature'; pageId: string; rect: Box; name: string; mark: SignatureMarkRequest }
+  | { kind: 'inspectCertificate'; certificate: Uint8Array; password: string; now: number }
   | ({ kind: 'signField'; date: string } & SigningRequest)
   | { kind: 'signatures'; now: number }
   | { kind: 'undo' }
@@ -434,6 +442,7 @@ export interface Results {
   moveWidget: DocumentChange
   deleteField: DocumentChange
   addSignature: AddedField
+  inspectCertificate: CertificateSummary
   signField: Uint8Array
   signatures: SignatureInfo[]
   undo: DocumentChange

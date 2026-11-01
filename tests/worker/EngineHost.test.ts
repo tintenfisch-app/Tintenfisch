@@ -54,6 +54,7 @@ function backend(overrides: Partial<EngineBackend> = {}): EngineBackend {
     applyRedactions: () => ({ dirtyPages: ['3-0'] }),
     addInkSignature: () => ({ fieldId: '70-0', dirtyPages: ['3-0'] }),
     addImageSignature: () => ({ fieldId: '71-0', dirtyPages: ['3-0'] }),
+    inspectCertificate: () => ({ signer: 'Ada Lovelace', validFrom: 0, validUntil: 1, validity: 'expired' }),
     signField: () => new Uint8Array([37, 80, 68, 70]),
     signatures: () => [],
     fields: () => [],

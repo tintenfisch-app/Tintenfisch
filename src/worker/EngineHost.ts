@@ -59,6 +59,7 @@ export type EngineBackend = Pick<
   | 'deleteField'
   | 'addInkSignature'
   | 'addImageSignature'
+  | 'inspectCertificate'
   | 'signField'
   | 'signatures'
   | 'revision'
@@ -201,6 +202,8 @@ export class EngineHost {
         if (mark.kind === 'ink') return this.#engine.addInkSignature(pageId, rect, name, { strokes: mark.strokes, penWidth: mark.penWidth, color: mark.color })
         return this.#engine.addImageSignature(pageId, rect, name, mark.width, mark.height, mark.rgba)
       }
+      case 'inspectCertificate':
+        return this.#engine.inspectCertificate(command.certificate, command.password, command.now)
       case 'signField':
         return this.#engine.signField(command.fieldId, command.certificate, command.password, command.reason, command.location, command.date)
       case 'signatures':

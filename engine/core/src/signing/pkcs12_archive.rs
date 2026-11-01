@@ -7,7 +7,7 @@ use sha1::{Digest, Sha1};
 use sha2::Sha256;
 use x509_cert::Certificate;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use crate::signing::oids;
 use crate::signing::password_decryption::{PasswordDecryption, wrong_password};
 use crate::signing::pkcs12_kdf::{KeyPurpose, bmp_password, derive};
@@ -20,6 +20,13 @@ pub struct Pkcs12Archive {
 
 impl Pkcs12Archive {
     pub fn open(bytes: &[u8], password: &str) -> Result<Pkcs12Archive> {
+        Pkcs12Archive::read(bytes, password).map_err(|error| match error.kind {
+            ErrorKind::Malformed => Error::new("this file is not a valid certificate (.p12 / .pfx)"),
+            _ => error,
+        })
+    }
+
+    fn read(bytes: &[u8], password: &str) -> Result<Pkcs12Archive> {
         let pfx = Pfx::from_der(bytes)?;
         if pfx.auth_safe.content_type != oids::DATA {
             return Err(Error::unsupported("certificate files protected by a public key are not supported"));
