@@ -15,8 +15,9 @@ export function DocumentTitle() {
       </div>
     )
   }
+  const pageCount = state.pages.length
   const facts = [
-    `${state.pageCount.toLocaleString()} ${state.pageCount === 1 ? 'page' : 'pages'}`,
+    `${pageCount.toLocaleString()} ${pageCount === 1 ? 'page' : 'pages'}`,
     `${state.objectCount.toLocaleString()} objects`,
     ...(state.repaired ? ['repaired'] : []),
   ]
