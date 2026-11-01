@@ -164,6 +164,13 @@ impl Font {
         }
     }
 
+    pub fn stretch(&self, glyph: &ShownGlyph) -> f64 {
+        match &self.kind {
+            FontKind::Simple(font) => u8::try_from(glyph.code).map_or(1.0, |code| font.stretch(code)),
+            _ => 1.0,
+        }
+    }
+
     pub fn is_vertical(&self) -> bool {
         matches!(&self.kind, FontKind::Cid(font) if font.is_vertical())
     }

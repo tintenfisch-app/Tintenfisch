@@ -25,4 +25,5 @@ mod scan_images;
 mod sign_digitally;
 mod sign_visually;
 mod store_history;
+mod substitute_fonts;
 mod text_layout;

@@ -9,10 +9,13 @@ use crate::fonts::{Encoding, FallbackFace, FontDescriptor, FontLibrary, FontProg
 use crate::store::ObjectStore;
 use crate::syntax::{Dict, Object};
 
+const STRETCH_LIMITS: (f64, f64) = (0.5, 2.0);
+
 pub struct SimpleFont {
     program: Option<FontProgram>,
     glyphs: Vec<Option<u16>>,
     widths: Vec<f64>,
+    stretches: Vec<f64>,
     encoding: Encoding,
     substituted: bool,
 }
@@ -52,7 +55,24 @@ impl SimpleFont {
             }
         }
         let widths = read_widths(font, store, missing_width, program.as_ref(), &glyphs)?;
-        Ok(SimpleFont { program, glyphs, widths, encoding, substituted })
+        let stretches = match program.as_ref().filter(|_| substituted) {
+            Some(program) => glyphs
+                .iter()
+                .zip(&widths)
+                .map(|(glyph, &width)| {
+                    glyph
+                        .and_then(|glyph| program.advance(glyph))
+                        .filter(|&natural| natural > 0.0 && width > 0.0)
+                        .map_or(1.0, |natural| (width / natural).clamp(STRETCH_LIMITS.0, STRETCH_LIMITS.1))
+                })
+                .collect(),
+            None => vec![1.0; 256],
+        };
+        Ok(SimpleFont { program, glyphs, widths, stretches, encoding, substituted })
+    }
+
+    pub fn stretch(&self, code: u8) -> f64 {
+        self.stretches[code as usize]
     }
 
     pub fn glyph(&self, code: u8) -> Option<u16> {
