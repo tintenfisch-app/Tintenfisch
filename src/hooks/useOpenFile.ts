@@ -8,6 +8,7 @@ export function useOpenFile(): (name: string, bytes: Uint8Array) => Promise<void
     async (name: string, bytes: Uint8Array) => {
       const id = await useLibraryStore.getState().openNew(name, bytes)
       if (id) await navigate({ to: '/documents/$documentId', params: { documentId: id } })
+      else if (useLibraryStore.getState().current === null) await navigate({ to: '/' })
     },
     [navigate],
   )

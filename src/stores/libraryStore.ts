@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { hasPdfHeader } from '@/lib/pdfHeader.ts'
 import { documentLibrary, type StoredFile } from '@/services/DocumentLibrary.ts'
 import { useAutoSaveStore } from '@/stores/autoSaveStore.ts'
 import { onDocumentReplaced, useDocumentStore } from '@/stores/documentStore.ts'
@@ -42,13 +43,24 @@ export const useLibraryStore = create<LibraryStore>()((set, get) => {
     },
 
     async openNew(name, bytes) {
+      if (!hasPdfHeader(bytes)) {
+        report(new Error(`${name} is not a PDF file.`))
+        return null
+      }
       await leave()
       try {
+        const documents = useDocumentStore.getState()
+        await documents.open(name, bytes.slice())
+        const opened = useDocumentStore.getState().document
+        if (opened.phase === 'failed') {
+          documents.close()
+          throw new Error(`${name} could not be opened: ${opened.message}`)
+        }
         const file = await documentLibrary.add(name, bytes)
         void globalThis.navigator?.storage?.persist?.()
         set({ current: file.id, missing: false })
         useToastStore.getState().clear('library')
-        void useDocumentStore.getState().open(name, bytes)
+        if (opened.phase === 'ready') useAutoSaveStore.getState().track(file.id)
         return file.id
       } catch (error) {
         report(error)
