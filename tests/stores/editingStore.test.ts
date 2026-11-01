@@ -51,6 +51,31 @@ describe('editingStore', () => {
     expect(useEditingStore.getState().active).toBeNull()
   })
 
+  it('keeps keys typed while a clicked line is still opening', async () => {
+    const { port, store } = createStore()
+    const begin = store.begin('3-0', 40, 15)
+    expect(useEditingStore.getState().typingPage).toBe('3-0')
+    store.edit((session) => session.insert(' '))
+    await port.answerNext({ line: 1, offset: 0 })
+    store.edit((session) => session.insert('X'))
+    await port.answerNext({ line: 1, clusters: ['a', 'b', 'c'], start: 0, styles: styles(3) })
+    expect(last(port)).toMatchObject({ kind: 'previewEdit', draft: { clusters: [' ', 'X', 'a', 'b', 'c'], caret: 2 } })
+    await port.answerNext(preview(20))
+    await port.answerNext(fonts)
+    await begin
+    expect(useDocumentStore.getState().pageRevisions['3-0']).toBe(1)
+  })
+
+  it('drops early keys and the input when the click hits no text', async () => {
+    const { port, store } = createStore()
+    const begin = store.begin('3-0', 40, 15)
+    store.edit((session) => session.insert('X'))
+    await port.answerNext(null)
+    await begin
+    expect(useEditingStore.getState()).toMatchObject({ typingPage: null, active: null })
+    expect(store.session()).toBeNull()
+  })
+
   it('opens the line under the click with the caret where it landed', async () => {
     const { port } = createStore()
     await open(port)
