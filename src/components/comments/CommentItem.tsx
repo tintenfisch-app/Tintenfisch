@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import { useEffect, useRef, type MouseEvent } from 'react'
 import type { Comment } from '@/types/protocol.ts'
 import { IconButton } from '@/components/ui/IconButton.tsx'
 import { useCommentsStore } from '@/stores/commentsStore.ts'
@@ -27,6 +27,17 @@ function readableDate(date: string): string {
 export function CommentItem({ comment, pageNumber, selected }: { comment: Comment; pageNumber: number; selected: boolean }) {
   const comments = useCommentsStore()
   const viewport = useViewportStore()
+  const field = useRef<HTMLTextAreaElement>(null)
+  const typing = comments.typing === comment.id
+
+  useEffect(() => {
+    const input = field.current
+    if (!typing || !input) return
+    const early = useCommentsStore.getState().typed()
+    if (early) input.value = early
+    input.focus()
+    input.setSelectionRange(input.value.length, input.value.length)
+  }, [typing])
 
   function reveal() {
     comments.select(comment.id)
@@ -46,6 +57,7 @@ export function CommentItem({ comment, pageNumber, selected }: { comment: Commen
         <IconButton icon="delete" label="Delete comment" tooltip="left" onClick={remove} />
       </header>
       <TextArea
+        ref={field}
         key={comment.contents}
         className="min-h-14 resize-y"
         defaultValue={comment.contents}

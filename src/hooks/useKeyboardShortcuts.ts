@@ -51,10 +51,15 @@ function press(event: KeyboardEvent) {
   }
   if (event.key === 'Escape' && finishesEdit(event.target)) return
   if (isEditable(event.target)) return
+  const comments = useCommentsStore.getState()
+  if (comments.placing && !command && (event.key.length === 1 || event.key === 'Backspace')) {
+    event.preventDefault()
+    comments.keep(event.key)
+    return
+  }
   const workspace = useWorkspaceStore.getState()
   const { tool } = workspace
   const selection = useSelectionStore.getState()
-  const comments = useCommentsStore.getState()
   const forms = useFormsStore.getState()
   const images = useImagesStore.getState()
   const links = useLinksStore.getState()

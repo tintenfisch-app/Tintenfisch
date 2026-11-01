@@ -10,6 +10,8 @@ const STROKE_WIDTH = 2
 interface CommentsStore {
   comments: Comment[]
   selected: string | null
+  typing: string | null
+  placing: boolean
   notice: string | null
   reload(): Promise<void>
   add(pageId: string, markup: MarkupRequest): Promise<void>
@@ -17,11 +19,14 @@ interface CommentsStore {
   removeSelected(): Promise<void>
   setContents(id: string, contents: string): Promise<void>
   select(id: string | null): void
+  keep(key: string): void
+  typed(): string
   reset(): void
 }
 
 export const useCommentsStore = create<CommentsStore>()((set, get) => {
   let sequence = 0
+  let early = ''
 
   const attempt = async (work: () => Promise<void>) => {
     try {
@@ -36,6 +41,8 @@ export const useCommentsStore = create<CommentsStore>()((set, get) => {
   return {
     comments: [],
     selected: null,
+    typing: null,
+    placing: false,
     notice: null,
 
     async reload() {
@@ -50,13 +57,19 @@ export const useCommentsStore = create<CommentsStore>()((set, get) => {
 
     async add(pageId, markup) {
       const style = { color: useWorkspaceStore.getState().activeColor(), width: STROKE_WIDTH, author: '', date: pdfDate(new Date()) }
+      const takesText = markup.kind === 'note' || markup.kind === 'textBox'
+      if (takesText) {
+        early = ''
+        set({ placing: true })
+      }
       await attempt(async () => {
         const added = await engine.request({ kind: 'addMarkup', pageId, markup, style })
         useDocumentStore.getState().touchPages(added.dirtyPages)
         await get().reload()
-        set({ selected: added.id })
-        if (markup.kind === 'note' || markup.kind === 'textBox') useWorkspaceStore.getState().showRight('comments')
+        set({ selected: added.id, typing: takesText ? added.id : null })
+        if (takesText) useWorkspaceStore.getState().showRight('comments')
       })
+      if (get().placing) set({ placing: false })
     },
 
     async remove(id) {
@@ -88,9 +101,21 @@ export const useCommentsStore = create<CommentsStore>()((set, get) => {
       if (id !== get().selected) set({ selected: id })
     },
 
+    keep(key) {
+      early = key === 'Backspace' ? early.slice(0, -1) : early + key
+    },
+
+    typed() {
+      const kept = early
+      early = ''
+      if (get().typing) set({ typing: null })
+      return kept
+    },
+
     reset() {
       sequence++
-      set({ comments: [], selected: null, notice: null })
+      early = ''
+      set({ comments: [], selected: null, typing: null, placing: false, notice: null })
     },
   }
 })

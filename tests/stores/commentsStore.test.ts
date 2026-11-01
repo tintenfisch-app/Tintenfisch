@@ -40,6 +40,11 @@ describe('commentsStore', () => {
     const { port, tools, store } = createStore()
     tools.choose('note')
     const adding = store.add('3-0', { kind: 'note', at: [10, 20], text: '' })
+    expect(useCommentsStore.getState().placing).toBe(true)
+    store.keep('H')
+    store.keep('x')
+    store.keep('Backspace')
+    store.keep('i')
     expect(last(port)).toMatchObject({
       kind: 'addMarkup',
       pageId: '3-0',
@@ -50,8 +55,11 @@ describe('commentsStore', () => {
     await port.answerNext([comment('20-0')])
     await adding
     expect(useDocumentStore.getState().pageRevisions['3-0']).toBe(1)
-    expect(useCommentsStore.getState()).toMatchObject({ selected: '20-0' })
+    expect(useCommentsStore.getState()).toMatchObject({ selected: '20-0', typing: '20-0' })
     expect(useWorkspaceStore.getState().right).toBe('comments')
+    expect(useCommentsStore.getState().placing).toBe(false)
+    expect(store.typed()).toBe('Hi')
+    expect(useCommentsStore.getState().typing).toBeNull()
   })
 
   it('changes and deletes comments, dropping a selection that is gone', async () => {
