@@ -19,6 +19,7 @@ impl Document {
     pub fn open(bytes: Vec<u8>, password: &str) -> Result<Document> {
         let mut store = ObjectStore::new(SourceFile::open_with_password(bytes, password)?);
         PageTree::separate_shared_pages(&mut store)?;
+        PageTree::break_cycles(&mut store)?;
         Ok(Document {
             store,
             caches: DocumentCaches::default(),

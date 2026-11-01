@@ -1,7 +1,11 @@
 use crate::support;
 
+use std::collections::HashSet;
+
 use support::fixtures;
+use support::synthetic_pdf::{Row, SyntheticPdf};
 use tintenfisch::content::{ContentParser, ContentStream, ContentWriter, Splice};
+use tintenfisch::document::Document;
 use tintenfisch::file::SourceFile;
 use tintenfisch::geometry::Rect;
 use tintenfisch::pages::{Page, PageTree};
@@ -59,6 +63,54 @@ fn a_page_listed_twice_gets_its_own_copy_and_cycles_are_ignored() {
     let saved: Vec<ObjId> = pages_of(&reopened).iter().map(|page| page.id.0).collect();
     assert_eq!(saved, after);
     assert_eq!(PageTree::separate_shared_pages(&mut store).unwrap(), 0);
+}
+
+fn pages_listing_themselves() -> Vec<u8> {
+    let mut pdf = SyntheticPdf::new("1.4");
+    pdf.object(1, 0, fixtures::CATALOG)
+        .object(2, 0, "<< /Type /Pages /Kids [3 0 R 2 0 R] /Count 2 >>")
+        .object(3, 0, fixtures::PAGE)
+        .stream(4, "", fixtures::CONTENT);
+    let rows: Vec<(u32, Row)> =
+        std::iter::once((0, Row::Free(65535))).chain((1..=4).map(|num| (num, Row::InUse(num)))).collect();
+    let start = pdf.xref_table(&rows, "/Size 5 /Root 1 0 R");
+    pdf.startxref(start).finish()
+}
+
+fn leaves_without_revisiting(
+    store: &ObjectStore,
+    node: ObjId,
+    parent: Option<ObjId>,
+    seen: &mut HashSet<ObjId>,
+) -> i64 {
+    assert!(seen.insert(node), "{node:?} is reached twice");
+    let object = store.object(node).unwrap();
+    let dict = object.as_dict().unwrap();
+    assert_eq!(dict.get("Parent").and_then(Object::as_reference), parent);
+    if dict.has_type("Page") {
+        return 1;
+    }
+    let leaves: i64 = dict
+        .get("Kids")
+        .and_then(Object::as_array)
+        .unwrap()
+        .iter()
+        .map(|kid| leaves_without_revisiting(store, kid.as_reference().unwrap(), Some(node), seen))
+        .sum();
+    assert_eq!(dict.int("Count"), Some(leaves));
+    leaves
+}
+
+#[test]
+fn a_page_tree_listing_itself_is_saved_without_the_loop() {
+    let document = Document::open(pages_listing_themselves(), "").unwrap();
+    for optimize in [false, true] {
+        let saved = store_of(document.save(optimize).unwrap());
+        let catalog = saved.object(saved.trailer().get("Root").and_then(Object::as_reference).unwrap()).unwrap();
+        let root = catalog.as_dict().unwrap().get("Pages").and_then(Object::as_reference).unwrap();
+        assert_eq!(leaves_without_revisiting(&saved, root, None, &mut HashSet::new()), 1);
+        assert_eq!(pages_of(&saved).len(), 1);
+    }
 }
 
 #[test]

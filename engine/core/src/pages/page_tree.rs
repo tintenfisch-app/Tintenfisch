@@ -35,6 +35,12 @@ struct Placement {
     index: usize,
 }
 
+struct Mended {
+    id: ObjId,
+    parent: Option<ObjId>,
+    kids: Option<(Vec<Object>, i64)>,
+}
+
 pub struct PageTree<'a> {
     store: &'a ObjectStore,
 }
@@ -80,6 +86,72 @@ impl<'a> PageTree<'a> {
             }
             Ok(shared.len())
         })
+    }
+
+    pub fn break_cycles(store: &mut ObjectStore) -> Result<usize> {
+        let tree = PageTree::new(store);
+        let (mut visited, mut mended, mut cut) = (HashSet::new(), Vec::new(), 0);
+        tree.mend(tree.root()?, None, 0, &mut visited, &mut mended, &mut cut)?;
+        if cut == 0 {
+            return Ok(0);
+        }
+        store.repair(|transaction| {
+            for node in &mended {
+                let mut dict = transaction.object(node.id)?.as_dict().cloned().unwrap_or_default();
+                match node.parent {
+                    Some(parent) => dict.insert("Parent", Object::Ref(parent)),
+                    None => {
+                        dict.remove("Parent");
+                    }
+                }
+                if let Some((kids, count)) = &node.kids {
+                    dict.insert("Kids", Object::Array(kids.clone()));
+                    dict.insert("Count", Object::Int(*count));
+                }
+                transaction.put(node.id, Object::Dict(dict))?;
+            }
+            Ok(cut)
+        })
+    }
+
+    fn mend(
+        &self,
+        id: ObjId,
+        parent: Option<ObjId>,
+        depth: usize,
+        visited: &mut HashSet<ObjId>,
+        mended: &mut Vec<Mended>,
+        cut: &mut usize,
+    ) -> Result<i64> {
+        if depth > MAX_DEPTH {
+            return Err(Error::new("page tree nested too deeply"));
+        }
+        let object = self.store.object(id)?;
+        let Some(node) = object.as_dict() else {
+            return Ok(0);
+        };
+        let kids = match node.get("Kids") {
+            Some(kids) => self.store.resolve(kids)?,
+            None => Object::Null,
+        };
+        if !is_tree_node(node, &kids) {
+            mended.push(Mended { id, parent, kids: None });
+            return Ok(1);
+        }
+        visited.insert(id);
+        let (mut kept, mut count) = (Vec::new(), 0);
+        for kid in kids.as_array().unwrap_or_default() {
+            match kid.as_reference() {
+                Some(child) if visited.contains(&child) => *cut += 1,
+                Some(child) => {
+                    count += self.mend(child, Some(id), depth + 1, visited, mended, cut)?;
+                    kept.push(kid.clone());
+                }
+                None => kept.push(kid.clone()),
+            }
+        }
+        mended.push(Mended { id, parent, kids: Some((kept, count)) });
+        Ok(count)
     }
 
     pub fn node_ids(&self) -> Result<HashSet<ObjId>> {
@@ -142,8 +214,7 @@ impl<'a> PageTree<'a> {
             Some(kids) => self.store.resolve(kids)?,
             None => Object::Null,
         };
-        let is_tree_node = node.has_type("Pages") || (!node.has_type("Page") && kids.as_array().is_some());
-        if !is_tree_node {
+        if !is_tree_node(node, &kids) {
             return visit(placement, &inherited.below(node), node);
         }
         if !visited.insert(placement.id) {
@@ -188,4 +259,8 @@ impl<'a> PageTree<'a> {
             _ => Vec::new(),
         })
     }
+}
+
+fn is_tree_node(node: &Dict, kids: &Object) -> bool {
+    node.has_type("Pages") || (!node.has_type("Page") && kids.as_array().is_some())
 }
