@@ -31,10 +31,11 @@ function removeOrDeselect(event: KeyboardEvent, remove: () => Promise<void>, des
 function press(event: KeyboardEvent) {
   const command = event.metaKey || event.ctrlKey
   const key = event.key.toLowerCase()
-  if (command && key === 'z' && !typesText(event.target)) {
+  const reverting = command && (key === 'z' || (key === 'y' && !event.shiftKey))
+  if (reverting && !typesText(event.target)) {
     event.preventDefault()
     const editing = useEditingStore.getState()
-    void (event.shiftKey ? editing.redo() : editing.undo())
+    void (key === 'y' || event.shiftKey ? editing.redo() : editing.undo())
   }
   if (command && key === 'p') {
     event.preventDefault()

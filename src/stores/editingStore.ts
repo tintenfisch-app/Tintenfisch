@@ -242,10 +242,7 @@ export const useEditingStore = create<EditingStore>()((set, get) => {
     },
 
     async undo() {
-      if (session?.changed) {
-        await get().cancel()
-        return
-      }
+      if (session?.changed) await get().commit()
       await revert('undo')
     },
 

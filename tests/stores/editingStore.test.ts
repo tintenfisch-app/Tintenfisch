@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Request } from '@/types/protocol.ts'
 import { useDocumentStore } from '@/stores/documentStore.ts'
 import { useEditingStore } from '@/stores/editingStore.ts'
@@ -167,16 +167,35 @@ describe('editingStore', () => {
     await commit
   })
 
-  it('undo first discards an unsaved draft, then reverts the document and reopens the caret', async () => {
+  it('undo commits an unsaved draft before reverting it, so redo can bring it back', async () => {
     const { port, store } = createStore()
     await open(port)
     store.edit((session) => session.deleteBackward())
     await port.answerNext(preview(14))
-    const discard = store.undo()
+    const undo = store.undo()
+    expect(last(port)).toMatchObject({ kind: 'commitEdit' })
+    await port.answerNext({ dirtyPages: ['3-0'] })
+    await vi.waitFor(() => expect(last(port).kind).toBe('undo'))
+    await port.answerNext({ dirtyPages: ['3-0'], uiState: JSON.stringify({ pageId: '3-0', line: 1, offset: 1 }) })
+    await port.answerNext({ line: 1, clusters: ['a', 'b', 'c'], start: 0, styles: styles(3) })
+    await port.answerNext(preview(20))
+    await port.answerNext(fonts)
+    await undo
+    expect(useEditingStore.getState().active).toMatchObject({ pageId: '3-0', caret: caret(20) })
+    const redo = store.redo()
     expect(last(port).kind).toBe('cancelEdit')
     await port.answerNext(undefined)
-    await discard
-    expect(useEditingStore.getState().active).toBeNull()
+    await vi.waitFor(() => expect(last(port).kind).toBe('redo'))
+    await port.answerNext({ dirtyPages: ['3-0'], uiState: JSON.stringify({ pageId: '3-0', line: 1, offset: 1 }) })
+    await port.answerNext({ line: 1, clusters: ['a', 'c'], start: 0, styles: styles(2) })
+    expect(last(port)).toMatchObject({ kind: 'previewEdit', draft: { clusters: ['a', 'c'], caret: 1 } })
+    await port.answerNext(preview(14))
+    await port.answerNext(fonts)
+    await redo
+  })
+
+  it('reverts the document and reopens the caret when there is no draft', async () => {
+    const { port, store } = createStore()
     const undo = store.undo()
     expect(last(port).kind).toBe('undo')
     await port.answerNext({ dirtyPages: ['3-0'], uiState: JSON.stringify({ pageId: '3-0', line: 1, offset: 3 }) })
@@ -185,7 +204,7 @@ describe('editingStore', () => {
     expect(last(port)).toMatchObject({ kind: 'previewEdit', draft: { clusters: ['a', 'b', 'c', 'd'], caret: 3 } })
     await port.answerNext(fonts)
     await undo
-    expect(useDocumentStore.getState().pageRevisions['3-0']).toBe(3)
+    expect(useDocumentStore.getState().pageRevisions['3-0']).toBe(1)
     expect(useEditingStore.getState().active).toMatchObject({ pageId: '3-0', caret: caret(30), frame })
   })
 })
