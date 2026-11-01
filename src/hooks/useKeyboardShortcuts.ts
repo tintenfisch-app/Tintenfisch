@@ -19,6 +19,14 @@ function typesText(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement && !NOT_TYPED.includes(target.type)
 }
 
+function finishesEdit(target: EventTarget | null): boolean {
+  const editing = useEditingStore.getState()
+  if (!editing.session() || (target instanceof HTMLElement && 'editInput' in target.dataset)) return false
+  if (isEditable(target) && !(target instanceof Element && target.closest('[data-keeps-edit]'))) return false
+  void editing.commit()
+  return true
+}
+
 function removeOrDeselect(event: KeyboardEvent, remove: () => Promise<void>, deselect: () => void) {
   if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault()
@@ -41,6 +49,7 @@ function press(event: KeyboardEvent) {
     event.preventDefault()
     usePrintStore.getState().openDialog()
   }
+  if (event.key === 'Escape' && finishesEdit(event.target)) return
   if (isEditable(event.target)) return
   if (event.key === 'Escape') useSelectionStore.getState().clear()
   const { tool } = useWorkspaceStore.getState()
